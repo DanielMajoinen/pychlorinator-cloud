@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5CBAE8"/>
+      <stop offset="50%" stop-color="#2A6FB8"/>
+      <stop offset="100%" stop-color="#123A82"/>
+    </linearGradient>
+    <linearGradient id="cloud-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#D0E4F2" stop-opacity="0.82"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="512" height="512" rx="112" ry="112"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+
+    <!-- Cloud — small, behind the droplet, flanking its upper shoulders -->
+    <g transform="translate(256, 170)">
+      <!-- Left lobe -->
+      <ellipse cx="-55" cy="0" rx="42" ry="34" fill="url(#cloud-fill)"/>
+      <!-- Right lobe -->
+      <ellipse cx="55" cy="0" rx="42" ry="34" fill="url(#cloud-fill)"/>
+      <!-- Centre dome -->
+      <ellipse cx="0" cy="-18" rx="55" ry="42" fill="url(#cloud-fill)"/>
+      <!-- Left-centre bridge -->
+      <ellipse cx="-30" cy="-12" rx="40" ry="35" fill="url(#cloud-fill)"/>
+      <!-- Right-centre bridge -->
+      <ellipse cx="30" cy="-12" rx="40" ry="35" fill="url(#cloud-fill)"/>
+      <!-- Bottom fill connecting lobes (lobed, not flat) -->
+      <ellipse cx="-35" cy="18" rx="38" ry="18" fill="url(#cloud-fill)"/>
+      <ellipse cx="0" cy="20" rx="40" ry="16" fill="url(#cloud-fill)"/>
+      <ellipse cx="35" cy="18" rx="38" ry="18" fill="url(#cloud-fill)"/>
+    </g>
+
+    <!-- Water droplet — HERO element, wider classic raindrop -->
+    <!-- Wider body, sharper apex, rounder bottom -->
+    <path d="M 256 95
+             C 256 95, 248 130, 232 175
+             C 212 230, 175 285, 170 320
+             C 165 355, 185 400, 256 410
+             C 327 400, 347 355, 342 320
+             C 337 285, 300 230, 280 175
+             C 264 130, 256 95, 256 95 Z"
+          fill="none"
+          stroke="#FFFFFF"
+          stroke-width="10"
+          stroke-linejoin="round"/>
+
+    <!-- Inner rim for double-stroke effect -->
+    <path d="M 256 95
+             C 256 95, 248 130, 232 175
+             C 212 230, 175 285, 170 320
+             C 165 355, 185 400, 256 410
+             C 327 400, 347 355, 342 320
+             C 337 285, 300 230, 280 175
+             C 264 130, 256 95, 256 95 Z"
+          fill="none"
+          stroke="rgba(255,255,255,0.25)"
+          stroke-width="18"
+          stroke-linejoin="round"/>
+
+    <!-- Outer white stroke on top of the rim -->
+    <path d="M 256 95
+             C 256 95, 248 130, 232 175
+             C 212 230, 175 285, 170 320
+             C 165 355, 185 400, 256 410
+             C 327 400, 347 355, 342 320
+             C 337 285, 300 230, 280 175
+             C 264 130, 256 95, 256 95 Z"
+          fill="none"
+          stroke="#FFFFFF"
+          stroke-width="9"
+          stroke-linejoin="round"/>
+
+    <!-- Three wavy water lines — filling the lower half of the droplet -->
+    <!-- Wave 1 (~48% down interior, widest span) -->
+    <path d="M 198 292
+             C 215 276, 237 308, 256 292
+             C 275 276, 297 308, 314 292"
+          fill="none"
+          stroke="#7EC8F0"
+          stroke-width="8"
+          stroke-linecap="round"/>
+
+    <!-- Wave 2 (~62% down, slightly narrower) -->
+    <path d="M 194 325
+             C 213 309, 237 341, 256 325
+             C 275 309, 299 341, 318 325"
+          fill="none"
+          stroke="#7EC8F0"
+          stroke-width="8"
+          stroke-linecap="round"/>
+
+    <!-- Wave 3 (~76% down, narrowest — follows the drop curvature) -->
+    <path d="M 200 358
+             C 215 342, 237 374, 256 358
+             C 275 342, 297 374, 312 358"
+          fill="none"
+          stroke="#7EC8F0"
+          stroke-width="8"
+          stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+.venv-*/
+
+# Coverage / test artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.envrc
+
+# Local development scratch
+.scratch/
+
+# Local-only secrets (e.g. user-provided overrides). Never commit.
+.secrets/
+pychlorinator_cloud/_local_secrets.py
+
+# Local-only research / capture data (large or sensitive). Never commit.
+*.flow
+captures/
+apk/

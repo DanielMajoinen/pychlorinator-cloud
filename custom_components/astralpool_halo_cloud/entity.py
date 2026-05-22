@@ -26,6 +26,8 @@ class HaloCloudEntity(CoordinatorEntity[HaloCloudCoordinator]):
             default_device_name(serial_number),
         )
         device_slug = slugify(device_name) or slugify(default_device_name(serial_number))
+        self._serial_number = serial_number
+        self._device_name = device_name
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, serial_number)},
@@ -36,6 +38,23 @@ class HaloCloudEntity(CoordinatorEntity[HaloCloudCoordinator]):
         self._attr_name = description.name
         self._attr_object_id = f"{device_slug}_{description.key}"
         self._attr_unique_id = f"{serial_number}_{description.key}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return Home Assistant device metadata with live firmware when known."""
+        data = self.coordinator.data
+        sw_version = ""
+        if data is not None:
+            firmware_version = getattr(data, "firmware_version", "")
+            sw_version = firmware_version if firmware_version != "unknown" else ""
+            sw_version = sw_version or getattr(data, "protocol_version", "") or ""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._serial_number)},
+            name=self._device_name,
+            manufacturer="AstralPool",
+            model="Halo Chlorinator",
+            sw_version=sw_version,
+        )
 
     @property
     def available(self) -> bool:

@@ -10,6 +10,7 @@ CONF_PASSWORD = "password"
 CONF_DEVICE_NAME = "device_name"
 CONF_AREA_ID = "area_id"
 CONF_TIME_DRIFT_THRESHOLD_MINUTES = "time_drift_threshold_minutes"
+CONF_CONNECTION_PAUSE_MINUTES = "connection_pause_minutes"
 
 PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button"]
 

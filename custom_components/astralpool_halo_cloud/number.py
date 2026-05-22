@@ -8,10 +8,10 @@ from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import EntityCategory
 
 from pychlorinator_cloud.setpoints import (
     ORP_SETPOINT_MAX_MV,
@@ -23,7 +23,7 @@ from pychlorinator_cloud.setpoints import (
 )
 from pychlorinator_cloud.websocket_client import ChlorinatorLiveData
 
-from .const import CONF_TIME_DRIFT_THRESHOLD_MINUTES, DOMAIN
+from .const import CONF_CONNECTION_PAUSE_MINUTES, CONF_TIME_DRIFT_THRESHOLD_MINUTES, DOMAIN
 from .coordinator import HaloCloudCoordinator
 from .entity import HaloCloudEntity
 
@@ -47,11 +47,12 @@ NUMBER_DESCRIPTIONS: tuple[HaloNumberEntityDescription, ...] = (
         native_min_value=PH_SETPOINT_MIN,
         native_max_value=PH_SETPOINT_MAX,
         native_step=PH_SETPOINT_STEP,
-        mode=NumberMode.BOX,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
         value_fn=lambda data: data.ph_setpoint,
         set_value_fn=lambda client, value: client.set_ph_setpoint(float(value)),
         update_value_fn=lambda data, value: setattr(data, "ph_setpoint", round(float(value), 1)),
-        is_supported_fn=lambda data: data.ph_control_type in {"Manual", "Automatic"},
+        is_supported_fn=lambda data: data.ph_setpoint is not None,
     ),
     HaloNumberEntityDescription(
         key="orp_setpoint_control",
@@ -61,11 +62,27 @@ NUMBER_DESCRIPTIONS: tuple[HaloNumberEntityDescription, ...] = (
         native_min_value=ORP_SETPOINT_MIN_MV,
         native_max_value=ORP_SETPOINT_MAX_MV,
         native_step=10,
-        mode=NumberMode.BOX,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
         value_fn=lambda data: data.orp_setpoint,
         set_value_fn=lambda client, value: client.set_orp_setpoint(int(value)),
         update_value_fn=lambda data, value: setattr(data, "orp_setpoint", int(value)),
-        is_supported_fn=lambda data: data.orp_control_type in {"Manual", "Automatic"},
+        is_supported_fn=lambda data: data.orp_setpoint is not None,
+    ),
+    HaloNumberEntityDescription(
+        key="heater_setpoint_control",
+        name="Heater Setpoint Control",
+        icon="mdi:thermometer",
+        native_unit_of_measurement="°C",
+        native_min_value=10,
+        native_max_value=40,
+        native_step=1,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
+        value_fn=lambda data: data.heater_setpoint_c,
+        set_value_fn=lambda client, value: client.set_heater_setpoint(int(value)),
+        update_value_fn=lambda data, value: setattr(data, "heater_setpoint_c", int(value)),
+        is_supported_fn=lambda data: data.heater_setpoint_c is not None,
     ),
 )
 
@@ -81,6 +98,7 @@ async def async_setup_entry(
         [
             *(HaloCloudSetpointNumber(coordinator, description) for description in NUMBER_DESCRIPTIONS),
             HaloCloudTimeDriftThresholdNumber(coordinator),
+            HaloCloudConnectionPauseMinutesNumber(coordinator),
         ]
     )
 
@@ -90,6 +108,31 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
 
     entity_description: HaloNumberEntityDescription
 
+    def _capability_bound(self, attr_name: str, fallback: float) -> float:
+        data = self.coordinator.data
+        value = getattr(data, attr_name, None) if data is not None else None
+        return float(value) if value is not None and value > 0 else fallback
+
+    @property
+    def native_min_value(self) -> float:
+        """Return controller-reported bounds when capabilities are populated."""
+        if self.entity_description.key == "ph_setpoint_control":
+            return self._capability_bound("min_ph_setpoint", PH_SETPOINT_MIN)
+        if self.entity_description.key == "orp_setpoint_control":
+            return self._capability_bound("min_orp_setpoint", ORP_SETPOINT_MIN_MV)
+        return float(self.entity_description.native_min_value or 0)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return controller-reported bounds when they are usable."""
+        if self.entity_description.key == "ph_setpoint_control":
+            value = self._capability_bound("max_ph_setpoint", PH_SETPOINT_MAX)
+            return value if value > self.native_min_value else PH_SETPOINT_MAX
+        if self.entity_description.key == "orp_setpoint_control":
+            value = self._capability_bound("max_orp_setpoint", ORP_SETPOINT_MAX_MV)
+            return value if value > self.native_min_value else ORP_SETPOINT_MAX_MV
+        return float(self.entity_description.native_max_value or 0)
+
     @property
     def available(self) -> bool:
         """Return whether this setpoint is safe to expose for writes."""
@@ -98,11 +141,6 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
             super().available
             and self.coordinator.client.data.connected
             and data is not None
-            and data.ph_setpoint is not None
-            and data.orp_setpoint is not None
-            and data.pool_chlorine_setpoint is not None
-            and data.acid_setpoint is not None
-            and data.spa_chlorine_setpoint is not None
             and self.entity_description.is_supported_fn(data)
         )
 
@@ -134,7 +172,7 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
             raise HomeAssistantError(str(err)) from err
 
         self.entity_description.update_value_fn(data, value)
-        self.coordinator.async_set_updated_data(data)
+        self.async_write_ha_state()
 
 
 class HaloCloudTimeDriftThresholdNumber(HaloCloudEntity, NumberEntity):
@@ -176,6 +214,49 @@ class HaloCloudTimeDriftThresholdNumber(HaloCloudEntity, NumberEntity):
             options={
                 **self.coordinator._entry.options,
                 CONF_TIME_DRIFT_THRESHOLD_MINUTES: new_value,
+            },
+        )
+        self.coordinator.async_update_listeners()
+
+
+class HaloCloudConnectionPauseMinutesNumber(HaloCloudEntity, NumberEntity):
+    """Editable duration for temporarily releasing the cloud connection.
+
+    A value of 0 pauses indefinitely until explicit resume.
+    """
+
+    _attr_native_min_value = 0
+    _attr_native_max_value = 240
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = "min"
+    _attr_mode = NumberMode.BOX
+    _attr_icon = "mdi:timer-pause-outline"
+
+    def __init__(self, coordinator: HaloCloudCoordinator) -> None:
+        super().__init__(
+            coordinator,
+            NumberEntityDescription(
+                key="connection_pause_minutes",
+                name="Cloud Pause Duration",
+                entity_category=EntityCategory.CONFIG,
+            ),
+        )
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.data is not None
+
+    @property
+    def native_value(self) -> float:
+        return float(self.coordinator.default_pause_minutes)
+
+    async def async_set_native_value(self, value: float) -> None:
+        new_value = int(value)
+        self.hass.config_entries.async_update_entry(
+            self.coordinator._entry,
+            options={
+                **self.coordinator._entry.options,
+                CONF_CONNECTION_PAUSE_MINUTES: new_value,
             },
         )
         self.coordinator.async_update_listeners()

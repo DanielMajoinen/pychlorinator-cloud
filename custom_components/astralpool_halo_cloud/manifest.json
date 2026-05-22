@@ -1,9 +1,13 @@
 {
   "domain": "astralpool_halo_cloud",
   "name": "AstralPool Halo Cloud",
-  "codeowners": ["@robmarkoski"],
+  "codeowners": [
+    "@robmarkoski"
+  ],
   "config_flow": true,
-  "after_dependencies": ["bluetooth_adapters"],
+  "after_dependencies": [
+    "bluetooth_adapters"
+  ],
   "documentation": "https://github.com/robmarkoski/pychlorinator-cloud",
   "issue_tracker": "https://github.com/robmarkoski/pychlorinator-cloud/issues",
   "integration_type": "hub",
@@ -15,8 +19,6 @@
       "connectable": true
     }
   ],
-  "requirements": [
-    "pychlorinator_cloud @ git+https://github.com/robmarkoski/pychlorinator-cloud.git@v0.2.3"
-  ],
-  "version": "0.2.3"
+  "requirements": [],
+  "version": "0.3.0-preview.1"
 }

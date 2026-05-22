@@ -8,7 +8,7 @@ Normal setup path:
    - Access code is read from BLE advertisement
    - Username is sent via BLE cmd 719
    - Password fragments received via BLE cmd 720
-   - Cloud credentials stored — BLE never needed again
+   - Cloud credentials stored. BLE never needed again
    - User confirms the HA device name and optional area before entry creation
 
 A manual credential step still exists in code as a fallback/debug path for cases
@@ -29,7 +29,7 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import selector
 
-# BLE imports are optional — only needed for BLE pairing path
+# BLE imports are optional. only needed for BLE pairing path
 try:
     from homeassistant.components.bluetooth import (
         BluetoothScanningMode,
@@ -139,7 +139,7 @@ class AstralPoolHaloCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_pairing_timeout(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle pairing timeout — let user retry."""
+        """Handle pairing timeout. let user retry."""
         if user_input is not None:
             return await self.async_step_wait_for_pairing()
 
@@ -175,7 +175,7 @@ class AstralPoolHaloCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_ble_pair(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Perform BLE pairing — register username and receive password."""
+        """Perform BLE pairing. register username and receive password."""
         errors: dict[str, str] = {}
 
         try:
@@ -204,7 +204,7 @@ class AstralPoolHaloCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not cloud_ok:
                 _LOGGER.warning(
-                    "Cloud verification failed — credentials stored anyway. "
+                    "Cloud verification failed. credentials stored anyway. "
                     "Cloud may become available once BLE disconnects."
                 )
 

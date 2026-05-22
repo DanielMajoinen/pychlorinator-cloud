@@ -44,7 +44,7 @@ And receive password fragments as dataexchange with cmd_id=0x02D0.
 This has NOT been tested. Pairing may require BLE-only characteristics
 that are not relayed through the cloud WebSocket.
 
-Usage (BLE — requires bleak)
+Usage (BLE. requires bleak)
 =============================
 
     from pychlorinator_cloud.pairing import pair_via_ble
@@ -131,8 +131,10 @@ def decrypt_characteristic(data: bytes, session_key: bytes) -> bytes:
     except ImportError:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         cipher = Cipher(algorithms.AES(SECRET_KEY), modes.ECB())
-        dec = cipher.decryptor()
-        decrypt = lambda d: dec.update(d) + dec.finalize()
+
+        def decrypt(d: bytes) -> bytes:
+            dec = cipher.decryptor()
+            return dec.update(d) + dec.finalize()
 
     array = data[:4] + decrypt(data[4:])
     array = decrypt(array[:16]) + array[16:]
@@ -377,7 +379,7 @@ async def pair_via_cloud(
     """Attempt to pair via the cloud WebSocket (EXPERIMENTAL).
     
     This sends the username registration command over the cloud WebSocket
-    and waits for password fragments. This may or may not work — the
+    and waits for password fragments. This may or may not work. the
     chlorinator might only accept pairing commands over BLE.
     
     Args:
@@ -429,7 +431,7 @@ async def pair_via_cloud(
             return password
         except asyncio.TimeoutError:
             LOGGER.warning(
-                "Cloud pairing timed out — pairing may only work over BLE"
+                "Cloud pairing timed out. pairing may only work over BLE"
             )
             return None
     finally:

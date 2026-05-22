@@ -21,7 +21,7 @@ from typing import Final
 
 SETPOINT_CMD_ID: Final[int] = 0x0066
 
-# Rob confirmed on real hardware that the controller accepts a broader range
+# Confirmed on real hardware that the controller accepts a broader range
 # than the initial conservative documentation-based bounds.
 PH_SETPOINT_MIN: Final[float] = 6.8
 PH_SETPOINT_MAX: Final[float] = 10.0
@@ -103,4 +103,4 @@ def build_setpoint_payload(
 
 def build_setpoint_command(**kwargs: int | float) -> bytes:
     payload = build_setpoint_payload(**kwargs)
-    return bytes([0x03]) + struct.pack("<H", SETPOINT_CMD_ID) + payload
+    return bytes([0x03]) + struct.pack("<H", SETPOINT_CMD_ID) + payload.ljust(17, b"\x00")

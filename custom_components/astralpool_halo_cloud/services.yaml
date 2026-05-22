@@ -1,0 +1,156 @@
+write_equipment_timer:
+  name: Write Equipment Timer
+  description: Configure an equipment timer slot (8 slots per season, 2 seasons).
+  target:
+    device:
+      integration: astralpool_halo_cloud
+  fields:
+    season:
+      name: Season
+      description: Winter or Summer (independent slot sets).
+      required: true
+      selector:
+        select:
+          options:
+            - Winter
+            - Summer
+    slot_index:
+      name: Slot Index
+      description: Timer slot 0-7.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 7
+    enabled:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
+    start_hour:
+      name: Start Hour
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    start_min:
+      name: Start Minute
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    start_mode:
+      name: Start Mode
+      default: Normal
+      selector:
+        select:
+          options:
+            - Normal
+            - Dusk
+            - Dawn
+    stop_hour:
+      name: Stop Hour
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    stop_min:
+      name: Stop Minute
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    stop_mode:
+      name: Stop Mode
+      default: Normal
+      selector:
+        select:
+          options:
+            - Normal
+            - Dusk
+            - Dawn
+    equipment:
+      name: Equipment
+      description: List of equipment names to enable in this slot.
+      required: true
+      selector:
+        select:
+          multiple: true
+          options:
+            - PoolSpa
+            - FilterPump
+            - Heater
+            - Outlet1
+            - Outlet2
+            - Outlet3
+            - Outlet4
+            - Valve1
+            - Valve2
+            - Valve3
+            - Valve4
+            - Relay1
+            - Relay2
+    pump_speed:
+      name: Pump Speed
+      default: Medium
+      selector:
+        select:
+          options:
+            - Low
+            - Medium
+            - High
+
+write_heat_demand:
+  name: Write Heat Demand Schedule
+  description: >-
+    Configure the heater demand window and enable/activation flags
+    (cmd 0x0451, HeaterDemandSettingsCharacteristic). All fields are
+    optional; omitted fields are preserved from the latest known live
+    snapshot.
+  target:
+    device:
+      integration: astralpool_halo_cloud
+  fields:
+    enabled:
+      name: Heat Demand Enabled
+      description: Master enable for the heat-demand feature.
+      selector:
+        boolean:
+    window_enabled:
+      name: Window Enabled
+      description: Restrict heating to the time window below. Disable for 24h.
+      selector:
+        boolean:
+    start_hour:
+      name: Start Hour
+      selector:
+        number:
+          min: 0
+          max: 23
+    start_minute:
+      name: Start Minute
+      selector:
+        number:
+          min: 0
+          max: 59
+    stop_hour:
+      name: Stop Hour
+      selector:
+        number:
+          min: 0
+          max: 23
+    stop_minute:
+      name: Stop Minute
+      selector:
+        number:
+          min: 0
+          max: 59
+    activated:
+      name: Heat Demand Activated
+      description: Activation flag (manual on/off within an enabled schedule).
+      selector:
+        boolean:
