@@ -6,7 +6,8 @@
   ],
   "config_flow": true,
   "after_dependencies": [
-    "bluetooth_adapters"
+    "bluetooth_adapters",
+    "http"
   ],
   "documentation": "https://github.com/robmarkoski/pychlorinator-cloud",
   "issue_tracker": "https://github.com/robmarkoski/pychlorinator-cloud/issues",
@@ -22,5 +23,5 @@
   "requirements": [
     "websockets>=12.0"
   ],
-  "version": "0.3.0-beta.2"
+  "version": "0.3.0-beta.3"
 }

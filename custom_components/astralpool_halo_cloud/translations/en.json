@@ -24,7 +24,7 @@
       },
       "device_details": {
         "title": "Device Details",
-        "description": "Choose how Halo {serial_number} should appear in Home Assistant.",
+        "description": "Choose how Halo {serial_number} should appear in Home Assistant. After setup, Home Assistant waits about one minute before the first cloud connection so the controller can finish releasing its pairing session.",
         "data": {
           "device_name": "Device Name",
           "area_id": "Area"

@@ -1,10 +1,15 @@
 write_equipment_timer:
   name: Write Equipment Timer
   description: Configure an equipment timer slot (8 slots per season, 2 seasons).
-  target:
-    device:
-      integration: astralpool_halo_cloud
   fields:
+    device_id:
+      name: Device
+      description: >-
+        The AstralPool Halo Cloud controller to target. Optional if you have
+        only one configured.
+      selector:
+        device:
+          integration: astralpool_halo_cloud
     season:
       name: Season
       description: Winter or Summer (independent slot sets).
@@ -114,10 +119,15 @@ write_lighting_timer:
   description: >-
     Configure a lighting timer slot (2 slots per season). Selects which light
     zones are driven via the zones list (cmd 0x0193, TimerType=1).
-  target:
-    device:
-      integration: astralpool_halo_cloud
   fields:
+    device_id:
+      name: Device
+      description: >-
+        The AstralPool Halo Cloud controller to target. Optional if you have
+        only one configured.
+      selector:
+        device:
+          integration: astralpool_halo_cloud
     season:
       name: Season
       required: true
@@ -193,10 +203,15 @@ write_heat_demand:
     (cmd 0x0451, HeaterDemandSettingsCharacteristic). All fields are
     optional; omitted fields are preserved from the latest known live
     snapshot.
-  target:
-    device:
-      integration: astralpool_halo_cloud
   fields:
+    device_id:
+      name: Device
+      description: >-
+        The AstralPool Halo Cloud controller to target. Optional if you have
+        only one configured.
+      selector:
+        device:
+          integration: astralpool_halo_cloud
     enabled:
       name: Heat Demand Enabled
       description: Master enable for the heat-demand feature.
@@ -244,10 +259,15 @@ set_light_colour:
     colour/effect names depend on the controller's light model (e.g. SLX,
     Hayward ColorLogic, Pentair IntelliBrite). An invalid name returns the
     list of valid options for your model.
-  target:
-    device:
-      integration: astralpool_halo_cloud
   fields:
+    device_id:
+      name: Device
+      description: >-
+        The AstralPool Halo Cloud controller to target. Optional if you have
+        only one configured.
+      selector:
+        device:
+          integration: astralpool_halo_cloud
     colour:
       name: Colour / Effect
       description: Model-specific colour or effect name (e.g. "Blue", "Disco").
@@ -269,10 +289,15 @@ synchronise_light_colour:
   description: >-
     Synchronise all lighting zones to the given zone's colour
     (cmd 0x01F5 SynchroniseZoneColour).
-  target:
-    device:
-      integration: astralpool_halo_cloud
   fields:
+    device_id:
+      name: Device
+      description: >-
+        The AstralPool Halo Cloud controller to target. Optional if you have
+        only one configured.
+      selector:
+        device:
+          integration: astralpool_halo_cloud
     zone:
       name: Light Zone
       description: Zero-based light zone index to synchronise from.

@@ -16,7 +16,7 @@
 > This project is not affiliated with AstralPool, Astral, Fluidra, or Astral Labs. Astral can change the backend or device protocol at any time and this may stop working.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/robmarkoski/pychlorinator-cloud/main/brand/logo.png" alt="AstralPool Halo Cloud logo" width="180">
+  <img src="https://raw.githubusercontent.com/robmarkoski/pychlorinator-cloud/main/brand/logo.png" alt="AstralPool Halo Cloud logo" width="540">
 </p>
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta.3] - 2026-07-10
+
+### Fixed
+
+- Home Assistant `hassfest` validation. Services no longer use a device filter under `target` (recent `hassfest` disallows it); each service now takes an optional `device_id` device selector field instead, which resolves the same way and keeps the bundled cards working unchanged. The manifest now declares its `http` usage (the frontend card registration) in `after_dependencies`. No functional change for users.
+- `translations/en.json` had a stale config-flow step description; synced with `strings.json`.
+
+### Changed
+
+- Restored the original banner logo in the README; the beta.2 badge artwork is retired.
+- Repository cleanup: removed the branding workshop under `docs/branding/` (concepts and intermediate sizes), the superseded `docs/hacs-install-and-test.md` checklist (the README's Installation, Verification, and Firmware Compatibility sections replace it), and the gitleaks CI workflow.
+
 ## [0.3.0-beta.2] - 2026-07-09
 
 ### Added

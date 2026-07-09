@@ -2650,8 +2650,8 @@ class HaloWebSocketClient:
                     parsed.get("pump_speed"),
                     parsed.get("data_hex"),
                 )
-                # 2026-05-21 — pump_speed Medium↔High flip fix (live logbook
-                # capture by Rob during beta.1 deploy). The 0x0324 carousel
+                # pump_speed Medium↔High flip fix (confirmed against a live
+                # logbook capture). The 0x0324 carousel
                 # cycles every 5-10s. Both sub=0x00 and sub=0x03 were being
                 # accepted as authoritative for `pump_speed`, so the selector
                 # flipped every rotation:
