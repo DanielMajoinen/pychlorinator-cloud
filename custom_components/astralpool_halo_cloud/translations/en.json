@@ -7,7 +7,7 @@
       },
       "ble_discovery": {
         "title": "BLE Pairing / Discovery",
-        "description": "Make sure your chlorinator is powered on and nearby. Home Assistant will look for it over Bluetooth. Once it is found, press Submit in Home Assistant first, then enable Pair Mode on the chlorinator panel when prompted."
+        "description": "Make sure your chlorinator is powered on and nearby. Home Assistant will keep watching over Bluetooth. When Halo appears, enable Pair Mode on the chlorinator panel; Home Assistant will continue automatically when the ready advertisement appears."
       },
       "ble_discovery_timeout": {
         "title": "No Chlorinator Found",
@@ -32,19 +32,19 @@
       },
       "ble_confirm": {
         "title": "Chlorinator Found",
-        "description": "Found {name}. Press Submit here first. As soon as Home Assistant moves to the next step, go to the chlorinator panel and enable Pair Mode. After pairing, you can choose the Home Assistant device name and optional area."
+        "description": "Found {name}. Enable Pair Mode on the chlorinator panel and Home Assistant will continue automatically when Halo is ready."
       },
       "wait_for_pairing": {
         "title": "Waiting for Pairing Mode",
-        "description": "Now go to the chlorinator panel and enable Pair Mode. Home Assistant is actively waiting for the pairing advertisement."
+        "description": "Enable Pair Mode on the chlorinator panel. Home Assistant is actively watching for the ready pairing advertisement."
       },
       "pairing_timeout": {
         "title": "Pairing Timeout",
-        "description": "The chlorinator did not enter pairing mode in time. Please try again in this order: press Submit in Home Assistant, then immediately enable Pair Mode on the chlorinator panel."
+        "description": "Home Assistant did not see a ready pairing advertisement in time. Check power, range, and Pair Mode on the chlorinator panel, then try again."
       },
       "ble_username": {
-        "title": "Choose Username",
-        "description": "Enter a username to register on the chlorinator. This will be used for cloud access. Max 14 characters.",
+        "title": "Pair Mode Detected",
+        "description": "Halo is ready to pair. Enter the username to register on the chlorinator. This will be used for cloud access. Max 14 characters.",
         "data": {
           "username": "Username"
         }
@@ -55,8 +55,11 @@
       }
     },
     "progress": {
-      "ble_discovery": "Looking for your chlorinator over Bluetooth...",
-      "wait_for_pairing": "Waiting for chlorinator to enter pairing mode..."
+      "ble_discovery": "Looking for Halo over Bluetooth...",
+      "ble_discovery_looking": "Looking for Halo over Bluetooth...",
+      "ble_discovery_found_waiting": "Found Halo. Waiting for Pair Mode...",
+      "ble_discovery_ready": "Pair Mode detected. Ready to pair...",
+      "wait_for_pairing": "Found Halo. Waiting for Pair Mode..."
     },
     "error": {
       "cannot_connect": "Could not connect to the chlorinator. Check credentials and ensure the chlorinator is online.",

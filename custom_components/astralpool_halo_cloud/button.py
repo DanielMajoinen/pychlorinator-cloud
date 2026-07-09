@@ -94,7 +94,7 @@ BUTTON_DESCRIPTIONS: tuple[HaloButtonEntityDescription, ...] = (
         icon="mdi:pause-circle-outline",
         entity_category=EntityCategory.CONFIG,
         # Pause is allowed even when the connection isn't currently established
-        # (e.g. coordinator is between reconnect attempts). it sets the pause
+        # (e.g. coordinator is between reconnect attempts) — it sets the pause
         # window which the reconnect loop will then honour.
         requires_connection=False,
         press_fn=_press_pause_cloud_connection,
@@ -114,19 +114,17 @@ BUTTON_DESCRIPTIONS: tuple[HaloButtonEntityDescription, ...] = (
         name="Sanitise Until Tomorrow",
         icon="mdi:calendar-clock",
         entity_category=EntityCategory.CONFIG,
-        entity_registry_enabled_default=False,
         press_fn=(
             lambda coordinator: coordinator.client.start_sanitise_until_timer_tomorrow()
         ),
     ),
-    # Filter For Period + Sanitise For Period removed. now select entities
+    # Filter For Period + Sanitise For Period removed — now select entities
     # with fixed time options (see select.py: HaloMaintenancePeriodSelect).
     HaloButtonEntityDescription(
         key="abort_maintenance_task",
         name="Abort Maintenance Task",
         icon="mdi:stop-circle-outline",
         entity_category=EntityCategory.CONFIG,
-        entity_registry_enabled_default=False,
         press_fn=lambda coordinator: coordinator.client.abort_maintenance_task(),
     ),
     # Vendor-app parity: BLE/cloud app has a "Hide Error" button on the
@@ -151,7 +149,33 @@ async def async_setup_entry(
 ) -> None:
     """Set up AstralPool Halo Cloud buttons."""
     coordinator: HaloCloudCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(HaloCloudButton(coordinator, description) for description in BUTTON_DESCRIPTIONS)
+    async_add_entities(
+        [
+            *(HaloCloudButton(coordinator, description) for description in BUTTON_DESCRIPTIONS),
+            HaloCloudAcidRefillButton(coordinator),
+        ]
+    )
+
+
+class HaloCloudAcidRefillButton(HaloCloudEntity, ButtonEntity):
+    """Log a fresh acid bottle: reset the reservoir estimate to full."""
+
+    _attr_icon = "mdi:bottle-tonic-plus"
+
+    def __init__(self, coordinator: HaloCloudCoordinator) -> None:
+        super().__init__(
+            coordinator,
+            ButtonEntityDescription(key="acid_log_refill", name="Log Acid Refill"),
+        )
+
+    @property
+    def available(self) -> bool:
+        # HA-side action; usable even while the cloud is disconnected.
+        return True
+
+    async def async_press(self) -> None:
+        await self.coordinator.acid.async_log_refill()
+        self.coordinator.async_update_listeners()
 
 
 class HaloCloudButton(HaloCloudEntity, ButtonEntity):

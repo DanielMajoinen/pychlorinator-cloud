@@ -19,14 +19,17 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Home Assistant provides this.
     vol = None
 
-from pychlorinator_cloud.exceptions import SignallingError
-from pychlorinator_cloud.websocket_client import EQUIPMENT_NAMES
+from .pychlorinator_cloud.exceptions import SignallingError
+from .pychlorinator_cloud.websocket_client import EQUIPMENT_NAMES
 
 from .const import CONF_AREA_ID, CONF_SERIAL_NUMBER, DOMAIN, PLATFORMS
 from .coordinator import HaloCloudCoordinator
 
 SERVICE_WRITE_EQUIPMENT_TIMER = "write_equipment_timer"
+SERVICE_WRITE_LIGHTING_TIMER = "write_lighting_timer"
 SERVICE_WRITE_HEAT_DEMAND = "write_heat_demand"
+SERVICE_SET_LIGHT_COLOUR = "set_light_colour"
+SERVICE_SYNCHRONISE_LIGHT_COLOUR = "synchronise_light_colour"
 LOGGER = logging.getLogger(__name__)
 
 if vol is not None:
@@ -47,13 +50,33 @@ if vol is not None:
             ),
             vol.Required("equipment"): [vol.In(EQUIPMENT_NAMES)],
             vol.Optional("pump_speed", default="Medium"): vol.In(
-                ["Low", "Medium", "High"]
+                ["Low", "Medium", "High", "AI"]
             ),
+            vol.Optional("device_id"): vol.Any(str, [str]),
+        }
+    )
+    WRITE_LIGHTING_TIMER_SCHEMA = vol.Schema(
+        {
+            vol.Required("season"): vol.In(["Winter", "Summer"]),
+            vol.Required("slot_index"): vol.All(int, vol.Range(min=0, max=1)),
+            vol.Required("enabled"): bool,
+            vol.Required("start_hour"): vol.All(int, vol.Range(min=0, max=23)),
+            vol.Required("start_min"): vol.All(int, vol.Range(min=0, max=59)),
+            vol.Optional("start_mode", default="Normal"): vol.In(
+                ["Normal", "Dusk", "Dawn"]
+            ),
+            vol.Required("stop_hour"): vol.All(int, vol.Range(min=0, max=23)),
+            vol.Required("stop_min"): vol.All(int, vol.Range(min=0, max=59)),
+            vol.Optional("stop_mode", default="Normal"): vol.In(
+                ["Normal", "Dusk", "Dawn"]
+            ),
+            vol.Required("zones"): [vol.All(int, vol.Range(min=0, max=3))],
             vol.Optional("device_id"): vol.Any(str, [str]),
         }
     )
 else:
     WRITE_EQUIPMENT_TIMER_SCHEMA = None
+    WRITE_LIGHTING_TIMER_SCHEMA = None
 
 if vol is not None:
     WRITE_HEAT_DEMAND_SCHEMA = vol.Schema(
@@ -70,6 +93,24 @@ if vol is not None:
     )
 else:
     WRITE_HEAT_DEMAND_SCHEMA = None
+
+if vol is not None:
+    SET_LIGHT_COLOUR_SCHEMA = vol.Schema(
+        {
+            vol.Required("colour"): str,
+            vol.Optional("zone", default=0): vol.All(int, vol.Range(min=0, max=3)),
+            vol.Optional("device_id"): vol.Any(str, [str]),
+        }
+    )
+    SYNCHRONISE_LIGHT_COLOUR_SCHEMA = vol.Schema(
+        {
+            vol.Optional("zone", default=0): vol.All(int, vol.Range(min=0, max=3)),
+            vol.Optional("device_id"): vol.Any(str, [str]),
+        }
+    )
+else:
+    SET_LIGHT_COLOUR_SCHEMA = None
+    SYNCHRONISE_LIGHT_COLOUR_SCHEMA = None
 
 
 async def _async_apply_area_to_entry_devices(
@@ -171,6 +212,37 @@ async def _async_handle_write_heat_demand(
         raise HomeAssistantError(f"Could not write heat-demand settings: {err}") from err
 
 
+async def _async_handle_set_light_colour(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Handle the set_light_colour service."""
+    coordinator = _resolve_service_coordinator(hass, call)
+    try:
+        await coordinator.client.set_light_colour(
+            colour=call.data["colour"],
+            zone=int(call.data.get("zone", 0)),
+        )
+    except ValueError as err:
+        raise HomeAssistantError(f"Invalid light colour: {err}") from err
+    except (RuntimeError, OSError, SignallingError) as err:
+        raise HomeAssistantError(f"Could not set light colour: {err}") from err
+
+
+async def _async_handle_synchronise_light_colour(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Handle the synchronise_light_colour service."""
+    coordinator = _resolve_service_coordinator(hass, call)
+    try:
+        await coordinator.client.synchronise_light_colour(
+            zone=int(call.data.get("zone", 0)),
+        )
+    except ValueError as err:
+        raise HomeAssistantError(f"Invalid light zone: {err}") from err
+    except (RuntimeError, OSError, SignallingError) as err:
+        raise HomeAssistantError(f"Could not synchronise light colour: {err}") from err
+
+
 async def _async_handle_write_equipment_timer(
     hass: HomeAssistant, call: ServiceCall
 ) -> None:
@@ -196,6 +268,30 @@ async def _async_handle_write_equipment_timer(
         raise HomeAssistantError(f"Could not write equipment timer: {err}") from err
 
 
+async def _async_handle_write_lighting_timer(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Handle the write_lighting_timer service."""
+    coordinator = _resolve_service_coordinator(hass, call)
+    try:
+        await coordinator.client.write_lighting_timer(
+            season=call.data["season"],
+            slot_index=int(call.data["slot_index"]),
+            enabled=bool(call.data["enabled"]),
+            start_hour=int(call.data["start_hour"]),
+            start_min=int(call.data["start_min"]),
+            start_mode=call.data.get("start_mode", "Normal"),
+            stop_hour=int(call.data["stop_hour"]),
+            stop_min=int(call.data["stop_min"]),
+            stop_mode=call.data.get("stop_mode", "Normal"),
+            zones=[int(z) for z in call.data["zones"]],
+        )
+    except ValueError as err:
+        raise HomeAssistantError(f"Invalid lighting timer configuration: {err}") from err
+    except (RuntimeError, OSError, SignallingError) as err:
+        raise HomeAssistantError(f"Could not write lighting timer: {err}") from err
+
+
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register integration services once."""
     if hass.services.has_service(DOMAIN, SERVICE_WRITE_EQUIPMENT_TIMER):
@@ -211,6 +307,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=WRITE_EQUIPMENT_TIMER_SCHEMA,
     )
 
+    async def _handle_write_lighting_timer(call: ServiceCall) -> None:
+        await _async_handle_write_lighting_timer(hass, call)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_WRITE_LIGHTING_TIMER,
+        _handle_write_lighting_timer,
+        schema=WRITE_LIGHTING_TIMER_SCHEMA,
+    )
+
     async def _handle_write_heat_demand(call: ServiceCall) -> None:
         await _async_handle_write_heat_demand(hass, call)
 
@@ -221,6 +327,26 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=WRITE_HEAT_DEMAND_SCHEMA,
     )
 
+    async def _handle_set_light_colour(call: ServiceCall) -> None:
+        await _async_handle_set_light_colour(hass, call)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_LIGHT_COLOUR,
+        _handle_set_light_colour,
+        schema=SET_LIGHT_COLOUR_SCHEMA,
+    )
+
+    async def _handle_synchronise_light_colour(call: ServiceCall) -> None:
+        await _async_handle_synchronise_light_colour(hass, call)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SYNCHRONISE_LIGHT_COLOUR,
+        _handle_synchronise_light_colour,
+        schema=SYNCHRONISE_LIGHT_COLOUR_SCHEMA,
+    )
+
 
 # Entity-key suffixes that USED to exist but have been replaced by other
 # entities (different platform, fixed-duration selects, etc). On entry setup we
@@ -229,6 +355,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
 OBSOLETE_ENTITY_KEY_SUFFIXES: tuple[str, ...] = (
     "_filter_period_minutes",  # replaced by select.*_filter_for_period
     "_sanitise_period_minutes",  # replaced by select.*_sanitise_for_period
+    "_operating_days",  # 0x0259 correction -> cell_running_hours
+    "_today_cell_runtime_minutes",  # 0x0259 correction -> filter_pump_minutes_today
+    "_unknown_counter_a",  # 0x0259 correction (removed)
 )
 
 
@@ -257,6 +386,7 @@ def _async_purge_obsolete_entities(hass: HomeAssistant, entry: ConfigEntry) -> N
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AstralPool Halo Cloud from a config entry."""
     coordinator = HaloCloudCoordinator(hass, entry)
+    await coordinator.async_load_persistent_state()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     _async_purge_obsolete_entities(hass, entry)
     _async_register_services(hass)

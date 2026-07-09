@@ -25,8 +25,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from pychlorinator_cloud.error_codes import ERROR_MESSAGE_OPTIONS, error_info_attributes
-from pychlorinator_cloud.websocket_client import ChlorinatorLiveData
+from .pychlorinator_cloud.error_codes import ERROR_MESSAGE_OPTIONS, error_info_attributes
+from .pychlorinator_cloud.websocket_client import ChlorinatorLiveData
 
 from .const import DOMAIN
 from .coordinator import HaloCloudCoordinator
@@ -40,6 +40,40 @@ class HaloSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[ChlorinatorLiveData], object]
     attributes_fn: Callable[[ChlorinatorLiveData], dict[str, object]] | None = None
     restore_on_startup: bool = False
+
+
+# Friendly display values for the pH / chlorine "verdict" enums. The raw vendor
+# codes (PHWasGreen, ORPIsRed, ChlorineIsLow, ...) are kept on a `raw_code`
+# attribute. Green=in range, Yellow=marginal, Red=out of range; Is=current
+# reading, Was=last completed reading (collapsed here for a friendly value).
+_STATUS_FRIENDLY: dict[str, str] = {
+    "None": "Unknown",
+    # pH
+    "PHIsGreen": "Balanced", "PHWasGreen": "Balanced",
+    "PHIsYellow": "Marginal", "PHWasYellow": "Marginal",
+    "PHIsRed": "Out of range", "PHWasRed": "Out of range",
+    "PHIsLow": "Low", "PHWasLow": "Low",
+    "PHIsOK": "OK", "PHWasOK": "OK",
+    "PHIsHigh": "High", "PHWasHigh": "High",
+    # chlorine / ORP
+    "ORPIsGreen": "Balanced", "ORPWasGreen": "Balanced",
+    "ORPIsYellow": "Marginal", "ORPWasYellow": "Marginal",
+    "ORPIsRed": "Out of range", "ORPWasRed": "Out of range",
+    "ChlorineIsLow": "Low", "ChlorineWasLow": "Low",
+    "ChlorineIsOK": "OK", "ChlorineWasOK": "OK",
+    "ChlorineIsHigh": "High", "ChlorineWasHigh": "High",
+}
+_STATUS_FRIENDLY_OPTIONS = ["Unknown", "Balanced", "OK", "Marginal", "Low", "High", "Out of range"]
+
+
+def _friendly_status(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    # Any unmapped code (incl. the parser's "Unknown(n)" fallback for firmware
+    # verdict codes we don't know) must collapse to a value that is in the ENUM
+    # options list, or HA raises ValueError on every state update. The exact
+    # raw code is preserved on the `raw_code` attribute.
+    return _STATUS_FRIENDLY.get(raw, "Unknown")
 
 
 def _restore_float(state: str) -> float:
@@ -76,8 +110,9 @@ _RESTORE_ASSIGNMENTS: dict[str, tuple[tuple[str, Callable[[str], object]], ...]]
     "pool_volume": (("pool_volume_l", _restore_int),),
     "firmware_version": (("firmware_version", _restore_str),),
     "protocol_version": (("protocol_version", _restore_str),),
-    "operating_days": (("operating_days", _restore_int),),
-    "today_cell_runtime_minutes": (("today_cell_runtime_minutes", _restore_int),),
+    "cell_running_hours": (("cell_running_hours", _restore_int),),
+    "low_salt_cell_running_hours": (("low_salt_cell_running_hours", _restore_int),),
+    "filter_pump_minutes_today": (("filter_pump_minutes_today", _restore_int),),
     "power_board_runtime_hours": (("power_board_runtime_hours", _restore_int),),
     "cell_reversal_count": (("cell_reversal_count", _restore_int),),
     "timer_profile_index": (("timer_profile_index", _restore_int),),
@@ -116,8 +151,12 @@ def _timer_summary_value(data: ChlorinatorLiveData) -> str | None:
 # the write_equipment_timer service) to (kind, slot_number). Used by the
 # timer-summary attributes to derive a presence + label per chip from the
 # live valve/gpo setup records the controller emits on 0x0514/0x0516.
+# PoolSpa intentionally excluded from the chip catalog — it's a Pool/Spa
+# mode select (handled by the dedicated mode select entity), not a per-timer
+# toggleable equipment. The protocol still encodes it in the equipment
+# bitmap, so existing slots with PoolSpa round-trip via equipment_enabled;
+# users just can't add it as a new chip from the timer card.
 _TIMER_CHIP_KEYS: tuple[tuple[str, str, int | None], ...] = (
-    ("PoolSpa", "builtin", None),
     ("FilterPump", "builtin", None),
     ("Heater", "builtin", None),
     ("Outlet1", "gpo", 1),
@@ -140,37 +179,46 @@ _BUILTIN_DEFAULT_LABELS: dict[str, str] = {
 }
 
 # Slot numbers (1-based) for the equipment_timer_slots vendor-app numbering.
-# The vendor app calls these "Timer 1".. "Timer 8". ordered by slot_index.
+# The vendor app calls these "Timer 1".. "Timer 8" — ordered by slot_index.
 
 
 def _equipment_catalog(data: ChlorinatorLiveData) -> list[dict[str, object]]:
     """Return per-chip {key, label, present, kind} for the timer card.
 
-    Built-ins (PoolSpa, FilterPump, Heater) are always present once any
-    timer-related data has been observed. GPOs and Valves are present iff
+    Built-ins (FilterPump, Heater) are always present once any timer-
+    related data has been observed. GPOs and Valves are present iff
     the controller's setup record marks them enabled. Relays are present
     iff the timer-master capability flag indicates relay support.
+
+    PoolSpa is intentionally NOT in the chip catalog — it's a mode flag,
+    not a per-timer toggleable. The protocol still encodes it in the
+    equipment bitmap so existing slots with PoolSpa round-trip via
+    equipment_enabled.
 
     Labels prefer custom-named entries over the built-in vendor names
     when the controller reports `is_custom_name=True`. Falls back to the
     chip key as a last resort.
     """
     catalog: list[dict[str, object]] = []
-    pool_spa_label = "Spa" if data.spa_selection else "Pool/Spa"
     for key, kind, slot in _TIMER_CHIP_KEYS:
         present = True
         label = _BUILTIN_DEFAULT_LABELS.get(key, key)
-        if key == "PoolSpa":
-            label = pool_spa_label
-        elif kind == "gpo" and slot is not None:
-            present = bool(data.gpo_enabled.get(slot, False)) or bool(
-                data.gpo_names.get(slot)
-            )
+        if kind == "gpo" and slot is not None:
+            # Strict: GPO is present only when the controller's setup record
+            # explicitly marks it enabled. A custom name alone is NOT enough
+            # — vendor setup wizards can leave a stale name on a disabled
+            # GPO. (A controller with 0 GPOs connected still reports names
+            # defaulting to "No Name", so a name-based fallback used to keep
+            # them all visible.)
+            present = bool(data.gpo_enabled.get(slot, False))
             label = data.gpo_names.get(slot) or f"Outlet {slot}"
         elif kind == "valve" and slot is not None:
-            present = bool(data.valve_enabled.get(slot, False)) or bool(
-                data.valve_names.get(slot)
-            ) or bool(data.valve_custom_names.get(slot - 1))
+            # Strict: valve is present only when the controller's setup
+            # record marks it enabled. Custom-name presence alone is no
+            # longer enough — a leftover custom-name slot for a removed
+            # valve would still show. The valve-enabled flag is the source
+            # of truth from the controller. 2026-05-26 user-feedback fix.
+            present = bool(data.valve_enabled.get(slot, False))
             custom_name = data.valve_custom_names.get(slot - 1)
             if data.valve_is_custom_name.get(slot) and custom_name:
                 label = custom_name
@@ -186,7 +234,7 @@ def _equipment_catalog(data: ChlorinatorLiveData) -> list[dict[str, object]]:
             #
             # NB: `timer_capability_flags` is a tuple[int, ...] (one byte
             # per capability category from cmd 0x0190), NOT a flat bitfield
-            #. hence we OR-reduce defensively to tolerate list / tuple /
+            # — hence we OR-reduce defensively to tolerate list / tuple /
             # int / None payloads. We then bias toward 'present' when we
             # have NO observed slot equipment data yet, so the chip stays
             # visible during the bootstrap window instead of disappearing.
@@ -202,7 +250,7 @@ def _equipment_catalog(data: ChlorinatorLiveData) -> list[dict[str, object]]:
                     present = True
                     break
             if not observed_any_equipment_bits:
-                # Bootstrap window or no slots populated. keep relay chips
+                # Bootstrap window or no slots populated — keep relay chips
                 # visible so the user can still configure them. Better to
                 # show an unused chip than to hide a present-but-unused
                 # relay channel.
@@ -219,7 +267,24 @@ def _equipment_catalog(data: ChlorinatorLiveData) -> list[dict[str, object]]:
     return catalog
 
 
-def _slot_descriptor(slot: dict[str, Any], catalog: list[dict[str, object]]) -> str:
+# Fallback labels for equipment keys that aren't in the chip catalog but
+# can still appear in a slot's equipment_enabled bitmap (e.g. PoolSpa was
+# removed from the chip list in 2026-05-26 but legacy slots may still
+# carry it). The descriptor surfaces a friendly label instead of the raw
+# key. `spa_selection` controls whether PoolSpa renders as "Spa" or
+# "Pool/Spa" — matches the chip-catalog behaviour before the removal.
+def _descriptor_fallback_label(key: str, spa_selection: bool = False) -> str:
+    if key == "PoolSpa":
+        return "Spa" if spa_selection else "Pool/Spa"
+    return key
+
+
+def _slot_descriptor(
+    slot: dict[str, Any],
+    catalog: list[dict[str, object]],
+    *,
+    spa_selection: bool = False,
+) -> str:
     """Return the vendor-app-style equipment summary for a timer slot."""
     active = slot.get("active", slot.get("enabled"))
     if not active:
@@ -234,17 +299,27 @@ def _slot_descriptor(slot: dict[str, Any], catalog: list[dict[str, object]]) -> 
         for item in catalog
         if isinstance(item.get("key"), str)
     }
-    labels = [str(label_by_key.get(key, key)) for key in equipment_keys]
+    labels = [
+        str(
+            label_by_key.get(
+                key,
+                _descriptor_fallback_label(key, spa_selection),
+            )
+        )
+        for key in equipment_keys
+    ]
     return ", ".join(labels) if labels else "Unconfigured"
 
 
 def _slot_descriptors(
     slots: dict[int, dict[str, Any]],
     catalog: list[dict[str, object]],
+    *,
+    spa_selection: bool = False,
 ) -> dict[str, str]:
     """Return descriptors keyed by string slot_index in timer-slot order."""
     return {
-        str(slot_index): _slot_descriptor(slot, catalog)
+        str(slot_index): _slot_descriptor(slot, catalog, spa_selection=spa_selection)
         for slot_index, slot in sorted(slots.items())
     }
 
@@ -305,13 +380,30 @@ def _timer_summary_attributes(data: ChlorinatorLiveData) -> dict[str, object]:
         "summer_slot_count_seen": len(data.timer_configs_summer),
         "winter_slots": winter_slots,
         "summer_slots": summer_slots,
+        "winter_light_slots": [
+            data.timer_configs_light_winter[i]
+            for i in sorted(data.timer_configs_light_winter)
+        ],
+        "summer_light_slots": [
+            data.timer_configs_light_summer[i]
+            for i in sorted(data.timer_configs_light_summer)
+        ],
+        "lighting_zone_names": dict(data.light_zone_names or {}),
         "slot_labels": slot_labels,
-        "slot_descriptors": _slot_descriptors(data.timer_configs, equipment_catalog),
+        "slot_descriptors": _slot_descriptors(
+            data.timer_configs,
+            equipment_catalog,
+            spa_selection=bool(data.spa_selection),
+        ),
         "winter_slot_descriptors": _slot_descriptors(
-            data.timer_configs_winter, equipment_catalog
+            data.timer_configs_winter,
+            equipment_catalog,
+            spa_selection=bool(data.spa_selection),
         ),
         "summer_slot_descriptors": _slot_descriptors(
-            data.timer_configs_summer, equipment_catalog
+            data.timer_configs_summer,
+            equipment_catalog,
+            spa_selection=bool(data.spa_selection),
         ),
         "equipment_catalog": equipment_catalog,
         "timer_config_last_seen": (
@@ -394,7 +486,7 @@ def _light_state_attributes(data: ChlorinatorLiveData) -> dict[str, object]:
     """Return raw light-state fields for live enum capture."""
     if data.light_zone1_mode_raw is None:
         return {}
-    return {
+    attrs: dict[str, object] = {
         "zone1_mode_raw": data.light_zone1_mode_raw,
         "zone2_mode_raw": data.light_zone2_mode_raw,
         "zone3_mode_raw": data.light_zone3_mode_raw,
@@ -404,6 +496,12 @@ def _light_state_attributes(data: ChlorinatorLiveData) -> dict[str, object]:
         "zone3_on": data.light_zone3_on,
         "zone4_on": data.light_zone4_on,
     }
+    if data.lighting_model_label:
+        attrs["lighting_model"] = data.lighting_model_label
+    # User-assigned light-zone names (cmd 0x012F), if the controller has any.
+    for zone_index, name in sorted((data.light_zone_names or {}).items()):
+        attrs[f"zone{zone_index + 1}_name"] = name
+    return attrs
 
 
 def _equipment_name_attributes(
@@ -446,7 +544,6 @@ def _equipment_name_description(kind: str, slot: int) -> HaloSensorEntityDescrip
         name=f"{name_prefix}{slot} Name",
         icon="mdi:tag-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=_equipment_name_value(kind, slot),
         attributes_fn=_equipment_name_attributes(kind, slot),
     )
@@ -510,7 +607,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=["Low", "Medium", "High"],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.pump_speed,
     ),
     HaloSensorEntityDescription(
@@ -520,7 +616,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=["Low", "Medium", "High"],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.timer_pump_speed,
     ),
     HaloSensorEntityDescription(
@@ -530,7 +625,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:timer-sand",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.priming_countdown,
     ),
     HaloSensorEntityDescription(
@@ -557,7 +651,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:ph",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.highest_ph_measured,
     ),
     HaloSensorEntityDescription(
@@ -566,7 +659,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:ph",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.lowest_ph_measured,
     ),
     HaloSensorEntityDescription(
@@ -576,7 +668,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:beaker-check-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.highest_orp_measured,
     ),
     HaloSensorEntityDescription(
@@ -586,7 +677,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:beaker-check-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.lowest_orp_measured,
     ),
     HaloSensorEntityDescription(
@@ -594,44 +684,18 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Chlorine Status",
         icon="mdi:beaker-outline",
         device_class=SensorDeviceClass.ENUM,
-        options=[
-            "None",
-            "ORPIsYellow",
-            "ORPWasYellow",
-            "ORPIsGreen",
-            "ORPWasGreen",
-            "ORPIsRed",
-            "ORPWasRed",
-            "ChlorineIsLow",
-            "ChlorineWasLow",
-            "ChlorineIsOK",
-            "ChlorineWasOK",
-            "ChlorineIsHigh",
-            "ChlorineWasHigh",
-        ],
-        value_fn=lambda data: data.chlorine_control_status,
+        options=_STATUS_FRIENDLY_OPTIONS,
+        value_fn=lambda data: _friendly_status(data.chlorine_control_status),
+        attributes_fn=lambda data: {"raw_code": data.chlorine_control_status},
     ),
     HaloSensorEntityDescription(
         key="ph_status",
         name="pH Status",
         icon="mdi:ph",
         device_class=SensorDeviceClass.ENUM,
-        options=[
-            "None",
-            "PHIsYellow",
-            "PHWasYellow",
-            "PHIsGreen",
-            "PHWasGreen",
-            "PHIsRed",
-            "PHWasRed",
-            "PHIsLow",
-            "PHWasLow",
-            "PHIsOK",
-            "PHWasOK",
-            "PHIsHigh",
-            "PHWasHigh",
-        ],
-        value_fn=lambda data: data.ph_control_status,
+        options=_STATUS_FRIENDLY_OPTIONS,
+        value_fn=lambda data: _friendly_status(data.ph_control_status),
+        attributes_fn=lambda data: {"raw_code": data.ph_control_status},
     ),
     HaloSensorEntityDescription(
         key="info_message",
@@ -688,7 +752,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
             "HeaterCooldownTimeRemaining",
         ],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.timer_info,
     ),
     HaloSensorEntityDescription(
@@ -707,7 +770,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.water_temperature_precise,
     ),
@@ -734,7 +796,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:counter",
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.cell_reversal_count,
     ),
@@ -746,32 +807,41 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.power_board_runtime_hours,
     ),
     HaloSensorEntityDescription(
-        key="operating_days",
-        name="Operating Days",
-        native_unit_of_measurement=UnitOfTime.DAYS,
-        icon="mdi:calendar-clock",
+        key="cell_running_hours",
+        name="Cell Running Hours",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        icon="mdi:timer-cog-outline",
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
-        value_fn=lambda data: data.operating_days,
+        value_fn=lambda data: data.cell_running_hours,
     ),
     HaloSensorEntityDescription(
-        key="today_cell_runtime_minutes",
-        name="Today's Cell Runtime",
+        key="low_salt_cell_running_hours",
+        name="Cell Running Hours (Low Salt)",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        icon="mdi:timer-alert-outline",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        restore_on_startup=True,
+        value_fn=lambda data: data.low_salt_cell_running_hours,
+    ),
+    HaloSensorEntityDescription(
+        key="filter_pump_minutes_today",
+        name="Filter Pump Runtime Today",
         native_unit_of_measurement=UnitOfTime.MINUTES,
         icon="mdi:timer-play-outline",
+        device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
-        value_fn=lambda data: data.today_cell_runtime_minutes,
+        value_fn=lambda data: data.filter_pump_minutes_today,
     ),
     # Configuration / setpoints
     HaloSensorEntityDescription(
@@ -781,9 +851,12 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=["None", "Manual", "Automatic"],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
-        value_fn=lambda data: data.ph_control_type,
+        value_fn=lambda data: (
+            data.ph_control_type
+            if data.ph_control_type in ("None", "Manual", "Automatic")
+            else None
+        ),
     ),
     HaloSensorEntityDescription(
         key="chlorine_control_type",
@@ -792,9 +865,12 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=["None", "Manual", "Automatic"],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
-        value_fn=lambda data: data.chlorine_control_type,
+        value_fn=lambda data: (
+            data.chlorine_control_type
+            if data.chlorine_control_type in ("None", "Manual", "Automatic")
+            else None
+        ),
     ),
     HaloSensorEntityDescription(
         key="ph_setpoint",
@@ -803,7 +879,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.PH,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.ph_setpoint,
     ),
@@ -814,7 +889,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:beaker-check-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.orp_setpoint,
     ),
@@ -824,7 +898,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:beaker-plus-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.pool_chlorine_setpoint,
     ),
@@ -834,7 +907,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:beaker-minus-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.acid_setpoint,
     ),
@@ -860,7 +932,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.filter_sanitise_remaining_seconds,
     ),
     HaloSensorEntityDescription(
@@ -869,7 +940,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:hot-tub",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.spa_chlorine_setpoint,
     ),
@@ -879,7 +949,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Access Level",
         icon="mdi:shield-account-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.access_level,
     ),
     HaloSensorEntityDescription(
@@ -887,7 +956,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Protocol Version",
         icon="mdi:identifier",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.protocol_version,
     ),
@@ -896,7 +964,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Firmware Version",
         icon="mdi:chip",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.firmware_version or None,
     ),
@@ -905,7 +972,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Last Update",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.last_update,
     ),
     HaloSensorEntityDescription(
@@ -913,7 +979,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Controller Time",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.controller_datetime,
     ),
     HaloSensorEntityDescription(
@@ -923,7 +988,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.board_temperature_c,
     ),
@@ -945,7 +1009,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:pool",
         device_class=SensorDeviceClass.VOLUME_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.pool_volume_l,
     ),
@@ -956,7 +1019,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:chart-line",
         device_class=SensorDeviceClass.VOLUME_STORAGE,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.pool_left_filter_l,
     ),
     # Heater
@@ -1008,8 +1070,51 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Heater Error",
         icon="mdi:alert-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.heater_error,
+    ),
+    HaloSensorEntityDescription(
+        key="heater_message",
+        name="Heater Message",
+        icon="mdi:radiator",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_message,
+        attributes_fn=lambda data: (
+            {"detail": data.heater_message_detail}
+            if data.heater_message_detail
+            else {}
+        ),
+    ),
+    HaloSensorEntityDescription(
+        key="solar_roof_temperature",
+        name="Solar Roof Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_roof_temp_c,
+    ),
+    HaloSensorEntityDescription(
+        key="solar_water_temperature",
+        name="Solar Water Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_water_temp_c,
+    ),
+    HaloSensorEntityDescription(
+        key="solar_mode",
+        name="Solar Mode",
+        icon="mdi:solar-power",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_mode,
+    ),
+    HaloSensorEntityDescription(
+        key="solar_message",
+        name="Solar Message",
+        icon="mdi:solar-power",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_message,
     ),
     HaloSensorEntityDescription(
         key="zone1_manual_mode",
@@ -1082,7 +1187,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:shaker-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.salt_error_raw,
     ),
     # Timer diagnostics (read-only)
@@ -1093,7 +1197,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=["Winter", "Summer"],
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.timer_season,
     ),
@@ -1103,7 +1206,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:counter",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.timer_profile_index,
     ),
@@ -1121,7 +1223,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:counter",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.timer_next_profile_index,
     ),
@@ -1131,7 +1232,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:table-column-plus-after",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.equipment_timer_slots,
     ),
@@ -1141,7 +1241,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:table-column-plus-after",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         restore_on_startup=True,
         value_fn=lambda data: data.lighting_timer_slots,
     ),
@@ -1151,7 +1250,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         icon="mdi:timer-play-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=_active_timer_count,
     ),
     HaloSensorEntityDescription(
@@ -1159,7 +1257,6 @@ SENSOR_DESCRIPTIONS: tuple[HaloSensorEntityDescription, ...] = (
         name="Equipment Timer Summary",
         icon="mdi:timer-cog-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=_timer_summary_value,
         attributes_fn=_timer_summary_attributes,
         restore_on_startup=True,
@@ -1191,6 +1288,107 @@ async def async_setup_entry(
         )
         for description in SENSOR_DESCRIPTIONS
     )
+    async_add_entities(
+        HaloCloudAcidSensor(coordinator, description, value_fn)
+        for description, value_fn in ACID_SENSOR_SPECS
+    )
+
+
+# Acid reservoir sensors — HA-side derived values from the AcidReservoirTracker
+# (see acid.py). value_fn receives the coordinator so it can read both the
+# tracker and live client data (for "used today").
+ACID_SENSOR_SPECS: tuple[
+    tuple[SensorEntityDescription, Callable[[HaloCloudCoordinator], object]], ...
+] = (
+    (
+        SensorEntityDescription(
+            key="acid_remaining",
+            name="Acid Remaining",
+            native_unit_of_measurement="L",
+            icon="mdi:bottle-tonic-outline",
+            state_class=SensorStateClass.MEASUREMENT,
+        ),
+        lambda c: c.acid.remaining_l,
+    ),
+    (
+        SensorEntityDescription(
+            key="acid_remaining_percent",
+            name="Acid Remaining Percent",
+            native_unit_of_measurement="%",
+            icon="mdi:gauge",
+            state_class=SensorStateClass.MEASUREMENT,
+        ),
+        lambda c: c.acid.percent,
+    ),
+    (
+        SensorEntityDescription(
+            key="acid_used_today",
+            name="Acid Used Today",
+            native_unit_of_measurement="mL",
+            icon="mdi:beaker-outline",
+            state_class=SensorStateClass.TOTAL,
+        ),
+        lambda c: c.acid.used_today_ml(
+            c.data.acid_dosing_seconds_today, c.data.acid_pump_size_ml_per_min
+        ),
+    ),
+    (
+        SensorEntityDescription(
+            key="acid_avg_daily",
+            name="Acid Average Daily Use",
+            native_unit_of_measurement="mL",
+            icon="mdi:chart-line",
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda c: (
+            round(c.acid.avg_daily_ml(), 0) if c.acid.avg_daily_ml() is not None else None
+        ),
+    ),
+    (
+        SensorEntityDescription(
+            key="acid_days_remaining",
+            name="Acid Days Remaining",
+            native_unit_of_measurement=UnitOfTime.DAYS,
+            icon="mdi:calendar-clock",
+            state_class=SensorStateClass.MEASUREMENT,
+        ),
+        lambda c: c.acid.days_remaining(),
+    ),
+    (
+        SensorEntityDescription(
+            key="acid_last_refill",
+            name="Acid Last Refill",
+            icon="mdi:calendar-check",
+            device_class=SensorDeviceClass.TIMESTAMP,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        ),
+        lambda c: c.acid.last_refill,
+    ),
+)
+
+
+class HaloCloudAcidSensor(HaloCloudEntity, SensorEntity):
+    """HA-side derived acid reservoir sensor (independent of live payloads)."""
+
+    def __init__(
+        self,
+        coordinator: HaloCloudCoordinator,
+        description: SensorEntityDescription,
+        value_fn: Callable[[HaloCloudCoordinator], object],
+    ) -> None:
+        super().__init__(coordinator, description)
+        self._acid_value_fn = value_fn
+
+    @property
+    def available(self) -> bool:
+        # Derived from persisted HA-side state; available even before first
+        # live payload. "Used today" simply reports None until data arrives.
+        return True
+
+    @property
+    def native_value(self):
+        return self._acid_value_fn(self.coordinator)
 
 
 class HaloCloudSensor(HaloCloudEntity, SensorEntity):
@@ -1213,7 +1411,7 @@ class HaloCloudSensor(HaloCloudEntity, SensorEntity):
             data = self.coordinator.data
             # Always available once we've observed a configured manual pump speed.
             # Previously gated to mode == "On" only, which left users with
-            # "unavailable" while the controller was operating in Auto/AI , 
+            # "unavailable" while the controller was operating in Auto/AI —
             # the configured manual speed is still meaningful information at
             # all times (it's the speed the controller would use in On, and
             # is the default fallback during Auto-Sanitising).

@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from pychlorinator_cloud.setpoints import (
+from .pychlorinator_cloud.setpoints import (
     ORP_SETPOINT_MAX_MV,
     ORP_SETPOINT_MIN_MV,
     PH_SETPOINT_MAX,
@@ -21,7 +21,7 @@ from pychlorinator_cloud.setpoints import (
     PH_SETPOINT_STEP,
     SetpointValidationError,
 )
-from pychlorinator_cloud.websocket_client import ChlorinatorLiveData
+from .pychlorinator_cloud.websocket_client import ChlorinatorLiveData
 
 from .const import CONF_CONNECTION_PAUSE_MINUTES, CONF_TIME_DRIFT_THRESHOLD_MINUTES, DOMAIN
 from .coordinator import HaloCloudCoordinator
@@ -99,8 +99,39 @@ async def async_setup_entry(
             *(HaloCloudSetpointNumber(coordinator, description) for description in NUMBER_DESCRIPTIONS),
             HaloCloudTimeDriftThresholdNumber(coordinator),
             HaloCloudConnectionPauseMinutesNumber(coordinator),
+            HaloCloudAcidBottleSizeNumber(coordinator),
         ]
     )
+
+
+class HaloCloudAcidBottleSizeNumber(HaloCloudEntity, NumberEntity):
+    """Configurable acid container size (litres) for reservoir tracking."""
+
+    _attr_native_min_value = 1
+    _attr_native_max_value = 60
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = "L"
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:bottle-tonic"
+
+    def __init__(self, coordinator: HaloCloudCoordinator) -> None:
+        super().__init__(
+            coordinator,
+            NumberEntityDescription(key="acid_bottle_size", name="Acid Bottle Size"),
+        )
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.acid.bottle_size_l
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.coordinator.acid.async_set_bottle_size(value)
+        self.coordinator.async_update_listeners()
 
 
 class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):

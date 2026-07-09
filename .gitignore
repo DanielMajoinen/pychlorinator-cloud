@@ -8,15 +8,19 @@ build/
 *.egg
 venv/
 .venv/
-.venv-*/
 
-# Coverage / test artifacts
+# Coverage
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
-.pytest_cache/
-.ruff_cache/
+
+# Local captures and logs (can be large and may contain sensitive data)
+*.flow
+captures/
+
+# Reverse-engineering artifacts stay local only
+apk/
 
 # IDE
 .vscode/
@@ -28,16 +32,6 @@ Thumbs.db
 
 # Environment
 .env
-.envrc
 
-# Local development scratch
-.scratch/
-
-# Local-only secrets (e.g. user-provided overrides). Never commit.
-.secrets/
-pychlorinator_cloud/_local_secrets.py
-
-# Local-only research / capture data (large or sensitive). Never commit.
-*.flow
-captures/
-apk/
+# Local development secrets (never tracked)
+custom_components/astralpool_halo_cloud/pychlorinator_cloud/_local_secrets.py

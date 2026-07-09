@@ -1,0 +1,30 @@
+# Gitleaks configuration for AstralPool Halo Cloud.
+#
+# Extends the default ruleset and allowlists ONLY the specific vendor-shared
+# protocol constants below. All of them are extracted from the public
+# HaloChlorGO mobile app, ship identically in every install of the vendor app,
+# and are required for the protocol to work (see SECURITY.md). They are NOT
+# private or account credentials. Everything else in the tree is still scanned,
+# including the rest of the files these constants live in.
+#
+# Matching is by constant value (line-level), not by file path, so the same
+# constants are also covered where they appear at their pre-0.3.0-beta.2 paths
+# in published history.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendor-shared protocol constants from the public app (not private secrets)"
+regexTarget = "line"
+regexes = [
+  # BLE GATT service/characteristic UUIDs (pairing.py)
+  '''4500000[0-9a-f]-98b7-4e29-a03f-160174643002''',
+  # BLE session encryption key (pairing.py) — the public FIPS-197 AES-128 test-vector key
+  '''2b7e151628aed2a6abf7158809cf4f3c''',
+  # Fixed DTLS local key (const.py) — public app constant
+  '''0123456789ABCDEF0123456789ABCDEF''',
+  # Signalling HTTP Basic auth pair (const.py) — public app constants, see SECURITY.md
+  '''appUserName_sXQlNZa7''',
+  '''0Q9V@EQwC322S\^K6kAyiefdr98a-dcfW''',
+]

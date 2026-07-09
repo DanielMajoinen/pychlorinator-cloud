@@ -1,290 +1,200 @@
 # AstralPool Halo Cloud
 
-<!-- markdownlint-disable MD013 MD028 MD033 MD041 -->
-
-<p align="center">
-  <img src="docs/branding/logo-banner.png" alt="AstralPool Halo Cloud" width="540">
-</p>
-
-<p align="center">
-  <a href="https://hacs.xyz/"><img alt="HACS Custom" src="https://img.shields.io/badge/HACS-Custom-orange.svg"></a>
-  <a href="https://www.home-assistant.io/"><img alt="Home Assistant Custom Integration" src="https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="https://github.com/robmarkoski/pychlorinator-cloud/releases"><img alt="Preview release" src="https://img.shields.io/badge/release-v0.3.0--preview.1-yellow.svg"></a>
-</p>
-
-An unofficial Home Assistant integration for AstralPool Halo chlorinators. Bluetooth is used once for pairing. After that the integration talks to the AstralPool cloud over WebSocket. Not affiliated with AstralPool, Astral, Fluidra, or Astral Labs.
+<!-- markdownlint-disable MD013 MD028 MD033 -->
 
 > [!CAUTION]
-> Preview release. Tested on one firmware version (`pbver 2.3`). No warranty, no vendor support. It might break. Use it if you know what you're doing.
+> **Stop before installing this. This is work in progress, pre-release software.**
+>
+> This integration may break at any time. There is no stability promise, no warranty, and no vendor support path.
+>
+> It has been tested on **one firmware version only: `pbver 2.3`**. That value is reported by the controller in `buildinfo.pbver` during cloud connection. Other firmware versions, controller variants, regions, and accessory combinations are untested.
+>
+> **Strong recommendation: do NOT use this. Use a BLE-based integration instead.** The cloud path is contended, brittle, depends on internet access, and depends on Astral's servers. The vendor backend appears to allow very limited simultaneous sessions.
+>
+> **DO NOT run this integration and a BLE integration against the same chlorinator at the same time. Pick one.** Running both can cause cloud disconnects, BLE pairing failures, and unpredictable controller state.
+>
+> This project is not affiliated with AstralPool, Astral, Fluidra, or Astral Labs. Astral can change the backend or device protocol at any time and this may stop working.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/robmarkoski/pychlorinator-cloud/main/brand/logo.png" alt="AstralPool Halo Cloud logo" width="180">
+</p>
+
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![Home Assistant Custom Integration](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-41BDF5.svg)](https://www.home-assistant.io/)
 
 > [!IMPORTANT]
-> Breaking change from 0.2.x. Entity unique IDs, the config flow, the manifest version, and the connection model have all changed. Easiest path: remove the existing integration and pair fresh. See [Migrating from 0.2.x](#migrating-from-02x).
+> After downloading, installing, or updating this integration through HACS, restart Home Assistant before adding or reloading the integration.
 
-> [!WARNING]
-> Don't run this and a BLE-based Halo integration against the same chlorinator. The cloud relay only allows one session per device. If you need to use the phone app or a BLE client, hit Pause Cloud Connection first.
+## What It Does
 
-## Contents
+AstralPool Halo Cloud is an unofficial Home Assistant custom integration for AstralPool Halo chlorinators. It is cloud-first: BLE is used only during onboarding to retrieve the device-generated cloud credentials, then normal operation uses the vendor cloud WebSocket at `iot.connectmypool.com.au`.
 
-- [What you get](#what-you-get)
-- [Requirements](#requirements)
-- [Install](#install)
-- [Configure](#configure)
-- [Migrating from 0.2.x](#migrating-from-02x)
-- [Entities](#entities)
-  - [Chemistry](#chemistry)
-  - [Pump and filtration](#pump-and-filtration)
-  - [Sanitisation cell](#sanitisation-cell)
-  - [Heater and heat demand](#heater-and-heat-demand)
-  - [Lighting](#lighting)
-  - [Equipment timers](#equipment-timers)
-  - [Maintenance tasks](#maintenance-tasks)
-  - [Cloud session](#cloud-session)
-  - [Diagnostics](#diagnostics)
-  - [Status flags](#status-flags)
-- [Lovelace cards](#lovelace-cards)
-- [Example dashboards](#example-dashboards)
-- [Services](#services)
-- [Automation examples](#automation-examples)
-- [Troubleshooting](#troubleshooting)
-- [What's new in 0.3.0-preview.1](#whats-new-in-030-preview1)
-- [Roadmap](#roadmap)
-- [Limitations](#limitations)
-- [Reporting issues](#reporting-issues)
-- [License](#license)
+The integration exposes around 165 Home Assistant entities (88 sensors, 49 binary sensors, 11 selects, 6 numbers, 9 buttons), five `astralpool_halo_cloud.*` service calls, and bundled Lovelace cards for timer/schedule editing.
 
-## What you get
+> [!NOTE]
+> In this pre-release build **all entities are enabled by default** to make the full surface easy to review while testing. A curated long-term default-disabled set (mostly per-flag diagnostics and raw read-backs) is documented in `docs/DEFAULT_DISABLED_ENTITIES.md` and will be restored before a stable release. Disable any you do not want from the device page in the meantime.
 
-Over 100 entities covering chemistry, pump, cell, heater, lighting, timers, maintenance tasks, and diagnostics. Two bundled Lovelace cards (timer editor and schedule view) that register themselves. Two services for writing equipment timer slots and the heat-demand schedule.
+## Current Status
 
-## Requirements
+| Area | Status | Notes |
+| --- | --- | --- |
+| Cloud connection and live updates | Working on one controller | Uses the vendor WebSocket signalling path. The client mimics the vendor's post-connect "vomit" handshake (`0x006B` + `0x0005`) and uses an escalating post-disconnect cooldown; a multi-day soak on one controller held mostly 15–30 minute sessions with automatic recovery from the relay's periodic kicks. Cloud contention is still the main reliability risk. |
+| Acid reservoir tracking | Implemented | HA-side estimate of remaining acid, driven by the controller's daily dosing (there is no tank-level sensor in the protocol). Set your bottle size, press **Log Acid Refill** when you replace it, and the integration tracks remaining volume, % left, used-today, average daily use, and days remaining. The seconds-to-millilitres conversion is provisional until validated against a real dose. |
+| BLE onboarding | Implemented, needs broader testing | Used to register a username and retrieve the generated cloud password. |
+| Read-only telemetry | Best covered area | Core state, chemistry, pump, heater, timer readback, lights, and diagnostics are parsed. |
+| System mode write | Implemented, experimental | `Auto -> On -> Auto` has been live tested. Treat `Off` carefully. Known revert/reliability issues are still being investigated. |
+| Pump speed write | Implemented, experimental | Manual `Low` / `Medium` / `High` writes exist. They force manual/on behavior and can still revert unexpectedly. |
+| pH and ORP setpoint writes | Implemented, experimental | Bounds are checked, but broader live validation is still needed. |
+| Heater writes | Implemented, experimental | Heater mode and target temperature are exposed if the controller reports heater data. |
+| Acid dosing hold | Implemented, high risk | Resume / hold-for-period control plus the acid reservoir estimate (see below). Use normal water testing as ground truth. |
+| Light, Blade, and Jets writes | Implemented, hardware dependent | Off/Auto/On for Blade and Jets, plus light mode. Disabled by default; only enable if your controller has the accessory. Blade/Jets live state is now read back from the controller (`0x00C9`), so the selects reflect real state, not just last-write. |
+| Light colour / effect | Implemented, hardware dependent | `set_light_colour` / `synchronise_light_colour` services drive per-zone colour/effect, mapped per light model. Only applies to colour-capable light models. |
+| Custom equipment names | Implemented | Built-in valve/GPO labels resolve to user-configured custom names where the controller emits them. Falls back to enum labels gracefully. |
+| Maintenance programs | Implemented, experimental | Abort and Sanitise Until Tomorrow are buttons. Filter For Period and Sanitise For Period are fixed-duration selects using the same time increments as Acid Dosing Hold. |
+| Last-known value persistence | Implemented | Most live values restore from the previous HA session on restart. Live-only values (heater setpoint, chemistry watermarks, timer pump speed) stay Unknown until first refresh by design. |
+| Error code labels | Decoded from vendor app | 77 codes across Hardware / Sensor / Pump / Heater / Chemistry / Lighting / Solar / Cell / Flow / Acid / Firmware categories. Each carries severity (Information / Warning / Fault), category, reason, and recommended action. |
+| Timer/schedule reads | Implemented, diagnostic | Schedule metadata and slot readback exist. |
+| Timer/schedule writes | Implemented, experimental | Equipment timers (8 slots/season), lighting timers (2 slots/season), and the heat-demand window are all writable via services and the bundled card. |
+| Bundled Lovelace cards | Implemented, experimental | `custom:halo-timer-card` edits equipment timers, lighting timers, and the heat-demand window (mode tabs). `custom:halo-schedule-view` visualises active timer slots. |
+| Local/LAN mode | Not exposed in Home Assistant | Low-level library code exists, but this HA integration is cloud-first. |
 
-| Component        | Notes                                                |
-| ---------------- | ---------------------------------------------------- |
-| Hardware         | AstralPool Halo chlorinator with cloud connectivity  |
-| Home Assistant   | 2024.1.0 or newer                                    |
-| HACS             | Required for install                                 |
-| Bluetooth        | Adapter or ESPHome BLE proxy, used only for pairing  |
-| Vendor app       | Halo Chlor GO should already work against the unit   |
-| Firmware tested  | `pbver 2.3`. Other firmware versions are untested    |
+## Entity Catalogue
 
-## Install
+Entity IDs use the Home Assistant device name chosen during setup. The default name is `halo_<serial>` where `<serial>` is your controller's reported serial number. Example object IDs look like (substitute your serial for `<SERIAL>`):
 
-1. HACS, Integrations, three-dot menu, **Custom repositories**.
-2. Add:
-   - URL: `https://github.com/robmarkoski/pychlorinator-cloud`
-   - Type: `Integration`
-3. Find **AstralPool Halo Cloud** in the HACS list, click **Download**.
-4. Restart Home Assistant.
+```text
+sensor.halo_<SERIAL>_ph_measurement
+select.halo_<SERIAL>_mode_select
+number.halo_<SERIAL>_ph_setpoint_control
+binary_sensor.halo_<SERIAL>_connected
+button.halo_<SERIAL>_pause_cloud_connection
+```
 
-## Configure
+If you rename the device, the `halo_<SERIAL>` prefix will be different.
 
-1. Settings, Devices & services, **Add Integration**, search for **AstralPool Halo Cloud**.
-2. The setup flow scans for nearby Halo chlorinators advertising as `HCHLOR`.
-3. Pick your controller. Confirm pairing on the controller's local UI or enter the access code shown on its display.
-4. After pairing the integration pulls the cloud credentials from the controller and switches to cloud mode. Bluetooth is not used again.
+### System Control Writes
 
-The device appears under Settings, Devices & services with all entities populated.
+These are the entities users actively interact with. All cloud-backed writes require the cloud session to be connected unless noted.
 
-## Migrating from 0.2.x
+| Entity keys | Type | Stability |
+| --- | --- | --- |
+| `mode_select` | select | Experimental. `Auto -> On -> Auto` has been tested on one controller. Pump/system mode revert behavior is still under investigation. |
+| `pump_speed_select` | select | Experimental. Manual `Low`, `Medium`, and `High` writes exist, but reliability is still under investigation. |
+| `heater_mode_select`, `heater_setpoint_control` | select, number | Experimental. Requires heater data from the controller. |
+| `ph_setpoint_control`, `orp_setpoint_control` | number | Experimental. Uses guarded setpoint writes and controller-reported bounds when available. |
+| `light_mode_select`, `blade_mode_select`, `jets_mode_select` | select | Experimental, accessory-dependent, disabled by default. |
+| `acid_dosing_select` | select | Experimental, disabled by default. Dosing controls are not a substitute for water testing. |
+| `connection_pause_select`, `connection_pause_minutes` | select, number | Local HA controls for temporarily releasing the cloud connection. Useful when opening the vendor app. |
+| `filter_for_period`, `sanitise_for_period` | select | Fixed-duration maintenance program starts. Options match the Acid Dosing Hold time increments. |
+| `pause_cloud_connection`, `resume_cloud_connection` | button | Local HA controls for the same cloud-session release workflow. |
+| `sync_controller_time` | button | Experimental. Writes controller date/time from Home Assistant host time. |
 
-Entity unique IDs and config data layout have changed. Cleanest path:
+### Live State Sensors
 
-1. Note any automations and dashboards that reference `*halo*` or `*pool_chlorinator*` entity IDs.
-2. Settings, Devices & services, open the existing AstralPool Halo entry, three-dot menu, **Delete**.
-3. HACS, Integrations, find AstralPool Halo Cloud, **Redownload** (or remove and re-add).
-4. Restart Home Assistant.
-5. Add the integration fresh, complete BLE pairing.
-6. Update your dashboards and automations. New entity ID pattern is `<domain>.halo_<SERIAL>_<key>`.
+| Purpose | Entity keys |
+| --- | --- |
+| Core state | `mode`, `current_operating_speed`, `pump_speed`, `last_update`, `connected` |
+| Messages | `info_message`, `error_message`, `timer_info` |
+| Chemistry | `ph_measurement`, `orp_measurement`, `chlorine_status`, `ph_status`, `ph_setpoint`, `orp_setpoint`, `acid_setpoint`, `pool_chlorine_setpoint`, `spa_chlorine_setpoint` |
+| Temperature | `water_temperature`, `water_temperature_precise`, `heater_water_temperature` |
+| Heater | `heater_mode`, `heater_setpoint` |
+| Timers | `controller_datetime`, `timer_profile_index`, `timer_next_profile_index`, `active_timer_slot`, `timer_pump_speed`, `timer_season`, `priming_countdown`, `filter_sanitise_remaining` |
+| Cloud/session helpers | `connection_pause_minutes`, `acid_dosing_hold_remaining` |
 
-If you used the old custom-duration filter or sanitise minute number entities, swap them for the new fixed-period selects (see [Maintenance tasks](#maintenance-tasks)).
+### Light Zones
 
-## Entities
+| Purpose | Entity keys |
+| --- | --- |
+| Per-zone on/off state | `light_zone1_on`, `light_zone2_on`, `light_zone3_on`, `light_zone4_on` |
+| Per-zone manual mode | `zone1_manual_mode`, `zone2_manual_mode`, `zone3_manual_mode`, `zone4_manual_mode` |
+| Per-zone active source | `zone1_active_source`, `zone2_active_source`, `zone3_active_source`, `zone4_active_source` |
+| Timer readback | `lighting_timer_slots` |
 
-All entities are scoped to one device per chlorinator. Entity ID pattern: `<domain>.halo_<SERIAL>_<key>`.
+### Binary State Flags
 
-### Chemistry
-
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| pH                           | sensor        | Current pH reading                             |
-| ORP Measurement              | sensor        | Current ORP in mV                              |
-| Highest pH Measured          | sensor        | High watermark since reset                     |
-| Lowest pH Measured           | sensor        | Low watermark since reset                      |
-| Highest ORP Measured         | sensor        | High watermark since reset                     |
-| Lowest ORP Measured          | sensor        | Low watermark since reset                      |
-| Chlorine Status              | sensor        | Controller-reported chlorine state             |
-| pH Status                    | sensor        | Controller-reported pH state                   |
-| pH Control Type              | sensor        | Configured pH control strategy                 |
-| Chlorine Control Type        | sensor        | Configured chlorine control strategy           |
-| pH Setpoint                  | number        | Adjustable pH setpoint                         |
-| ORP Setpoint                 | number        | Adjustable ORP setpoint                        |
-| pH Setpoint Readback         | sensor        | Echo of the last accepted setpoint             |
-| ORP Setpoint Readback        | sensor        | Echo of the last accepted setpoint             |
-| Pool Chlorine Setpoint       | sensor        | Configured pool chlorine target                |
-| Spa Chlorine Setpoint        | sensor        | Configured spa chlorine target                 |
-| Acid Setpoint                | sensor        | Configured acid setpoint                       |
-| Chemistry Values Current     | binary_sensor | True while readings are fresh                  |
-| Chemistry Values Valid       | binary_sensor | True when probe state is trusted               |
-
-### Pump and filtration
-
-| Entity                          | Domain          | Notes                                |
-| ------------------------------- | --------------- | ------------------------------------ |
-| System Mode                     | sensor + select | Off / Auto / Manual / AI             |
-| Pump Speed                      | sensor          | Current operating speed              |
-| Manual Pump Speed               | select          | Low / Medium / High in Manual mode   |
-| Manual Pump Speed (diagnostic)  | sensor          | Last manual speed code reported      |
-| Timer Pump Speed (diagnostic)   | sensor          | Last timer-slot speed in use         |
-| Priming Countdown               | sensor          | Seconds remaining in priming         |
-| Pump Operating                  | binary_sensor   | True while pump is running           |
-| Pump Priming                    | binary_sensor   | True while priming                   |
-| No Flow                         | binary_sensor   | Controller-reported no-flow          |
-| Backwashing                     | binary_sensor   | True during automatic backwash       |
-| Valve 0                         | binary_sensor   | Valve 0 active state                 |
-| Valve 1                         | binary_sensor   | Valve 1 active state                 |
-
-### Sanitisation cell
-
-| Entity                          | Domain        | Notes                                          |
-| ------------------------------- | ------------- | ---------------------------------------------- |
-| Cell Level                      | sensor        | Cell output level                              |
-| Cell Current                    | sensor        | Cell current draw                              |
-| Cell Reversal Count             | sensor        | Polarity reversals since reset                 |
-| Today's Cell Runtime            | sensor        | Minutes of cell runtime today                  |
-| Cell Operating                  | binary_sensor | True while electrolysing                       |
-| Cell Reversed                   | binary_sensor | True while in reversed polarity                |
-| Cell Reversing                  | binary_sensor | True during polarity transition                |
-| Cell Disabled                   | binary_sensor | True when manually or fault-disabled           |
-| Sanitising Active               | binary_sensor | Sanitising task running                        |
-| Sampling Active                 | binary_sensor | Probe sampling cycle running                   |
-| Sampling Only                   | binary_sensor | Probe-only mode, no sanitisation               |
-| Filtering Only                  | binary_sensor | Filter-only mode, no sanitisation              |
-| Standby                         | binary_sensor | Controller in standby                          |
-| Low Speed No Chlorinating       | binary_sensor | Low-speed safety inhibit                       |
-| Reduced Output Low Temperature  | binary_sensor | Output reduced due to low water temp           |
-| Low Salt                        | binary_sensor | Low salt warning                               |
-| High Salt                       | binary_sensor | High salt warning                              |
-
-### Heater and heat demand
-
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| Heater Mode                  | sensor        | Current heater mode                            |
-| Heater Mode Control          | select        | Set heater mode (Off / Auto / On)              |
-| Heater Pump Mode             | sensor        | Pump association                               |
-| Heat Pump Mode               | sensor        | Set if a heat pump is configured               |
-| Heater Setpoint              | sensor        | Configured heater setpoint                     |
-| Heater Setpoint Control      | number        | Adjustable heater setpoint                     |
-| Heater Water Temperature     | sensor        | Heater-side water temperature                  |
-| Heater Error                 | sensor        | Heater-side error string                       |
-| Heater On                    | binary_sensor | True while heating                             |
-| Heater Cooldown Active       | binary_sensor | Post-heating cooldown                          |
-| Heat Demand Schedule         | sensor        | Summary string of the heat-demand window       |
-| Heat Demand Enabled          | binary_sensor | Master heat-demand enable                      |
-| Heat Demand Window Enabled   | binary_sensor | Window time-restriction flag                   |
-| Heat Demand Activated        | binary_sensor | Activation flag within an enabled schedule     |
-
-Set the heat-demand schedule via the [`write_heat_demand`](#services) service.
-
-### Lighting
-
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| Light Mode                   | select        | Set lighting mode                              |
-| Pool Light (Zone 1)          | binary_sensor | True when Zone 1 lights are on                 |
-| Light Zone 2                 | binary_sensor | True when Zone 2 lights are on                 |
-| Light Zone 3                 | binary_sensor | True when Zone 3 lights are on                 |
-| Light Zone 4                 | binary_sensor | True when Zone 4 lights are on                 |
-| Zone 1 to 4 Manual Mode      | sensor x4     | Per-zone manual-mode flag                      |
-| Zone 1 to 4 Active Source    | sensor x4     | Which control source is driving the zone       |
-| Blade Mode                   | select        | Pool blade (jet / feature) mode if equipped    |
-| Jets Mode                    | select        | Spa jets mode if equipped                      |
-
-### Equipment timers
-
-Eight timer slots per season, two seasons (Winter / Summer). Per-slot equipment selection, start and stop times, pump speed.
-
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| Timer Season                 | select        | Switch active season Winter / Summer           |
-| Equipment Timer Slots        | sensor        | Per-slot config in attributes                  |
-| Equipment Timer Active Slots | sensor        | Count of currently-active slots                |
-| Equipment Timer Summary      | sensor        | Compact summary plus slot descriptor maps      |
-| Refresh Timer Config         | button        | Force a re-read of all timer characteristics   |
-| Timer Info                   | sensor        | Per-slot info messages                         |
-
-Write individual slots via the [`write_equipment_timer`](#services) service or interactively via the bundled `halo-timer-card` (see [Lovelace cards](#lovelace-cards)).
-
-### Maintenance tasks
-
-| Entity                          | Domain        | Notes                                       |
-| ------------------------------- | ------------- | ------------------------------------------- |
-| Filter For Period               | select        | Fixed-duration filter task (1 min to 24 h)  |
-| Sanitise For Period             | select        | Fixed-duration sanitise task (1 min to 24 h)|
-| Acid Dosing Hold                | select        | Hold acid dosing for a fixed duration       |
-| Acid Dosing Hold Remaining      | sensor        | Time remaining on an active dosing hold     |
-| Filter/Sanitise Remaining       | sensor        | Time remaining on the current task          |
-| Sanitise Until Tomorrow         | button        | "Sanitise until next timer slot"            |
-| Abort Maintenance Task          | button        | Cancel an in-progress task                  |
-| Manual Acid Dose Active         | binary_sensor | True during a manual acid dose              |
-| Dosing Pump                     | binary_sensor | True while the dosing pump is running       |
-| Dosing Disabled                 | binary_sensor | True when dosing is disabled                |
-| Daily Acid Dose Limit Reached   | binary_sensor | True once today's limit is reached          |
-
-### Cloud session
-
-Controls for handing the cloud session over to the vendor app or a BLE client without uninstalling.
-
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| Connection Hold              | select        | Active / Paused                                |
-| Pause Cloud Connection       | button        | One-shot pause                                 |
-| Resume Cloud Connection      | button        | One-shot resume                                |
-| Cloud Pause Duration         | number        | Auto-resume after N minutes (0 = indefinite)   |
-| Cloud Connected              | binary_sensor | True while the WebSocket session is healthy    |
+| Purpose | Entity keys |
+| --- | --- |
+| Connection and pump | `connected`, `pump_operating`, `pump_priming` |
+| Cell and chemistry validity | `cell_operating`, `cell_disabled`, `cell_reversed`, `cell_reversing`, `chemistry_values_current`, `chemistry_values_valid` |
+| Heater | `heater_on`, `heater_cooldown_active` |
+| Flow and salt | `no_flow`, `low_salt`, `high_salt` |
+| Operating states | `sanitising_active`, `filtering_only`, `sampling_active`, `sampling_only`, `standby`, `backwashing`, `spa_selection` |
+| Dosing | `manual_acid_dose_active`, `dosing_pump_on`, `dosing_disabled`, `daily_acid_dose_limit_reached` |
+| Limits and warnings | `low_speed_no_chlorinating`, `reduced_output_low_temperature`, `cooling_fan_on`, `ai_mode_active`, `sanitising_until_next_timer_tomorrow` |
 
 ### Diagnostics
 
-| Entity                       | Domain        | Notes                                          |
-| ---------------------------- | ------------- | ---------------------------------------------- |
-| Firmware Version             | sensor        | `pbver` reported by the controller             |
-| Protocol Version             | sensor        | Reported protocol version                      |
-| Access Level                 | sensor        | Reported access level                          |
-| Controller Time              | sensor        | Controller wall-clock                          |
-| Last Update                  | sensor        | Timestamp of the last successful poll          |
-| Time Drift                   | binary_sensor | True when controller clock skews past threshold|
-| Time Drift Threshold         | number        | Drift threshold in seconds                     |
-| Sync Controller Time         | button        | Push HA time to the controller                 |
-| Refresh Optional Values      | button        | Sweep optional / non-pushed registers          |
-| Board Temperature            | sensor        | Controller board temperature                   |
-| Cooling Fan                  | binary_sensor | True while the cooling fan is on               |
-| Power Board Runtime          | sensor        | Lifetime hours on the power board              |
-| Operating Days               | sensor        | Days powered on                                |
-| Water Temperature            | sensor        | Pool water temperature, 1 C resolution         |
-| Water Temperature Precise    | sensor        | Pool water temperature, 0.1 C resolution       |
-| WiFi Signal Strength         | sensor        | Chlorinator's own WiFi RSSI                    |
+These are intended for advanced troubleshooting (see the pre-release note above about default-enabled state).
 
-### Status flags
+| Purpose | Entity keys |
+| --- | --- |
+| Protocol and access | `access_level`, `protocol_version`, `firmware_version` |
+| Cell and board | `cell_level`, `cell_current`, `cell_reversal_count`, `cell_running_hours`, `low_salt_cell_running_hours`, `board_temperature`, `filter_pump_minutes_today`, `power_board_runtime_hours` |
+| Chemistry watermarks | `highest_ph_measured`, `lowest_ph_measured`, `highest_orp_measured`, `lowest_orp_measured` |
+| Control model | `ph_control_type`, `chlorine_control_type`, `pool_volume`, `litres_left_to_filter`, `salt_error_raw` |
+| Heater diagnostics | `heat_pump_mode`, `heater_pump_mode`, `heater_error`, `heater_message` (with `detail` attribute) |
+| Gas-heater status flags | `heater_flame`, `heater_pressure`, `heater_gas_valve`, `heater_lockout`, `heater_service_required` (binary sensors; most relevant to gas heaters) |
+| Heat-demand schedule | `heat_demand_schedule` (sensor, window summary + attributes), `heat_demand_enabled`, `heat_demand_window_enabled`, `heat_demand_activated` (binary sensors) |
+| Solar (accessory-dependent, disabled by default) | `solar_roof_temperature`, `solar_water_temperature`, `solar_mode`, `solar_message` (sensors); `solar_pump`, `solar_flush_active` (binary sensors) |
+| Time drift | `time_drift`, `time_drift_threshold` |
+| Timers | `equipment_timer_summary`, `equipment_timer_slots`, `equipment_timer_active_slots`, `active_timer_slot` |
+| Valves | `valve_0_active`, `valve_1_active` |
+| Equipment names | `gpo1_name` to `gpo4_name`, `valve1_name` to `valve4_name` (each with `is_custom_name` attribute) |
+| Controller notices | `controller_notice_active`, `controller_fault_active` (`error_message` carries `severity`, `category`, `reason`, `recommended_action`, `raw_code` attributes) |
 
-| Entity                                | Domain        | Notes                                         |
-| ------------------------------------- | ------------- | --------------------------------------------- |
-| AI Mode Active                        | binary_sensor | True while AI-mode logic is in control        |
-| Spa Selected                          | binary_sensor | True when spa mode is active                  |
-| Sanitising Until Next Timer Tomorrow  | binary_sensor | "Run until next timer" mode engaged           |
-| Controller Notice Active              | binary_sensor | A non-fault notice is present                 |
-| Controller Fault Active               | binary_sensor | A fault notice is present                     |
-| Info Message                          | sensor        | Current info message string                   |
-| Error Message                         | sensor        | Current error message string                  |
-| Hide Error                            | button        | Dismiss the current error message             |
+### Maintenance
 
-## Lovelace cards
+| Purpose | Entity keys |
+| --- | --- |
+| One-shot actions | `button.halo_<SERIAL>_abort_maintenance_task`, `button.halo_<SERIAL>_sanitise_until_tomorrow` |
+| Fixed-duration maintenance programs | `select.halo_<SERIAL>_filter_for_period`, `select.halo_<SERIAL>_sanitise_for_period` |
+| Force optional refresh | `button.halo_<SERIAL>_refresh_optional_values` (30-second rate limit) |
 
-Two custom cards are bundled with the integration and registered automatically. You don't need to add resources manually.
+### Acid Reservoir
 
-### `halo-timer-card`
+The controller reports acid pump run-time per day (`0x0259`) but has no tank-level sensor, so remaining acid is estimated HA-side. Set your bottle size and log a refill; the integration decrements the estimate as the controller doses and resets across the controller's daily rollover.
 
-8-slot equipment timer editor matching the vendor app. Winter / Summer season switching, per-slot equipment chips, pump-speed picker, staged-edit confirmation with readback.
+| Purpose | Entity keys |
+| --- | --- |
+| Configure + refill | `number.halo_<SERIAL>_acid_bottle_size` (litres), `button.halo_<SERIAL>_log_acid_refill` (reset estimate to full + stamp the time) |
+| Reservoir estimate | `acid_remaining` (L), `acid_remaining_percent`, `acid_days_remaining`, `acid_last_refill` |
+| Usage | `acid_used_today` (mL), `acid_avg_daily` (mL/day) |
+
+> [!NOTE]
+> The raw field is dosing-pump seconds; the millilitre figures are derived using the acid pump dose rate (mL/min) and remain provisional until confirmed against a real acid dose. When acid usage is very low, `acid_days_remaining` can read as an unrealistically large number.
+
+## Services
+
+All services are under the `astralpool_halo_cloud` domain and target one Halo device via `device_id` (if you only have one Halo, it is resolved automatically). They require an active cloud session.
+
+| Service | Purpose | Key fields |
+| --- | --- | --- |
+| `write_equipment_timer` | Configure one equipment timer slot (8 slots per season). | `season` (Winter/Summer), `slot_index` (0–7), `enabled`, `start_hour`/`start_min`, `start_mode` (Normal/Dusk/Dawn), `stop_hour`/`stop_min`, `stop_mode`, `equipment` (multi-select: PoolSpa, FilterPump, Heater, Outlet1–4, Valve1–4, Relay1–2), `pump_speed` (Low/Medium/High) |
+| `write_lighting_timer` | Configure one lighting timer slot (2 slots per season). | `season`, `slot_index` (0–1), `enabled`, `start_hour`/`start_min`, `start_mode`, `stop_hour`/`stop_min`, `stop_mode`, `zones` (list of zero-based zone indices 0–3) |
+| `write_heat_demand` | Configure the heater-demand window. All fields optional; omitted ones keep the last known value. | `enabled`, `window_enabled`, `start_hour`/`start_minute`, `stop_hour`/`stop_minute`, `activated` |
+| `set_light_colour` | Set a light zone's colour/effect (colour-capable models only). An invalid name returns the valid options for your light model. | `colour` (model-specific name, e.g. "Blue", "Disco"), `zone` (0–3) |
+| `synchronise_light_colour` | Sync all zones to the given zone's colour. | `zone` (0–3) |
+
+The bundled timer card calls `write_equipment_timer`, `write_lighting_timer`, and `write_heat_demand` for you.
+
+## Bundled Lovelace Cards
+
+Two custom Lovelace cards ship with the integration:
+
+- `custom:halo-timer-card`: staged editor with mode tabs for **Equipment timers** (8 slots per season), **Lighting timers** (2 slots per season), and the **Heat-demand window**.
+- `custom:halo-schedule-view`: read-only timeline view of active equipment runs.
+
+The integration serves the card modules at these paths:
+
+```yaml
+resources:
+  - url: /astralpool_halo_cloud/halo-timer-card.js
+    type: module
+  - url: /astralpool_halo_cloud/halo-schedule-view.js
+    type: module
+```
+
+Example cards:
 
 ```yaml
 type: custom:halo-timer-card
@@ -293,299 +203,280 @@ device_id: <HA_DEVICE_ID>
 name: Pool Equipment Timers
 ```
 
-### `halo-schedule-view`
-
-Read-only day or week timeline of scheduled equipment runs. Useful as a quick "what's running when" view on a wall tablet.
-
 ```yaml
 type: custom:halo-schedule-view
 entity: sensor.halo_<SERIAL>_equipment_timer_summary
 name: Pool Schedule
 ```
 
-After making timer edits, press `button.halo_<SERIAL>_refresh_timer_config` to force a re-read of timer state.
+Notes for wiring:
 
-## Example dashboards
+- `entity` should point at the `equipment_timer_summary` sensor for the Halo device.
+- `device_id` is recommended on `halo-timer-card` so service calls target the correct chlorinator when more than one Halo device exists.
+- Use `button.halo_<SERIAL>_refresh_timer_config` after changing timers if you want an immediate readback sweep.
+- The timer card's mode tabs cover equipment timers, lighting timers, and the heat-demand window. `halo-schedule-view` visualises equipment runs only.
 
-### Current state at a glance
+## Recommended Dashboard
+
+This is a small Lovelace entities card for normal monitoring and careful manual control. Replace `halo_<SERIAL>` with your actual device prefix.
 
 ```yaml
-type: vertical-stack
+type: entities
 title: Pool
-cards:
-  - type: glance
-    entities:
-      - entity: sensor.halo_<SERIAL>_water_temperature_precise
-        name: Water
-      - entity: sensor.halo_<SERIAL>_ph_measurement
-        name: pH
-      - entity: sensor.halo_<SERIAL>_orp_measurement
-        name: ORP
-      - entity: sensor.halo_<SERIAL>_cell_level
-        name: Cell
-  - type: entities
-    title: Status
-    entities:
-      - sensor.halo_<SERIAL>_mode
-      - sensor.halo_<SERIAL>_current_operating_speed
-      - binary_sensor.halo_<SERIAL>_pump_operating
-      - binary_sensor.halo_<SERIAL>_cell_operating
-      - binary_sensor.halo_<SERIAL>_heater_on
-      - binary_sensor.halo_<SERIAL>_cloud_connected
-```
-
-### Maintenance controls
-
-```yaml
-type: entities
-title: Pool Maintenance
+show_header_toggle: false
 entities:
-  - select.halo_<SERIAL>_mode_select
-  - select.halo_<SERIAL>_pump_speed_select
-  - select.halo_<SERIAL>_filter_for_period
-  - select.halo_<SERIAL>_sanitise_for_period
-  - select.halo_<SERIAL>_acid_dosing_select
-  - button.halo_<SERIAL>_sanitise_until_tomorrow
-  - button.halo_<SERIAL>_abort_maintenance_task
-  - button.halo_<SERIAL>_dismiss_info_message
+  - entity: binary_sensor.halo_<SERIAL>_connected
+    name: Cloud connected
+  - entity: sensor.halo_<SERIAL>_info_message
+    name: Info
+  - entity: sensor.halo_<SERIAL>_error_message
+    name: Error
+  - type: divider
+  - entity: select.halo_<SERIAL>_mode_select
+    name: System mode
+  - entity: sensor.halo_<SERIAL>_mode
+    name: Mode readback
+  - entity: select.halo_<SERIAL>_pump_speed_select
+    name: Manual pump speed
+  - entity: sensor.halo_<SERIAL>_current_operating_speed
+    name: Current operating speed
+  - type: divider
+  - entity: sensor.halo_<SERIAL>_water_temperature
+    name: Water temperature
+  - entity: sensor.halo_<SERIAL>_ph_measurement
+    name: pH
+  - entity: number.halo_<SERIAL>_ph_setpoint_control
+    name: pH setpoint
+  - entity: sensor.halo_<SERIAL>_orp_measurement
+    name: ORP
+  - entity: number.halo_<SERIAL>_orp_setpoint_control
+    name: ORP setpoint
+  - type: divider
+  - entity: select.halo_<SERIAL>_heater_mode_select
+    name: Heater mode
+  - entity: number.halo_<SERIAL>_heater_setpoint_control
+    name: Heater setpoint
+  - entity: binary_sensor.halo_<SERIAL>_heater_on
+    name: Heater on
+  - entity: sensor.halo_<SERIAL>_heater_water_temperature
+    name: Heater water temperature
+  - type: divider
+  - entity: number.halo_<SERIAL>_connection_pause_minutes
+    name: Cloud pause duration
+  - entity: button.halo_<SERIAL>_pause_cloud_connection
+    name: Pause cloud connection
+  - entity: button.halo_<SERIAL>_resume_cloud_connection
+    name: Resume cloud connection
 ```
 
-### Cloud session
+> [!NOTE]
+> Some controls may be unavailable until the integration has received the first live payload and the controller has reported the relevant capability.
 
-```yaml
-type: entities
-title: Cloud Session
-entities:
-  - binary_sensor.halo_<SERIAL>_cloud_connected
-  - select.halo_<SERIAL>_connection_pause_select
-  - number.halo_<SERIAL>_connection_pause_minutes
-  - button.halo_<SERIAL>_pause_cloud_connection
-  - button.halo_<SERIAL>_resume_cloud_connection
+## Firmware Compatibility
+
+**Read this before installing.** Whether this integration can onboard your controller depends on its firmware.
+
+BLE onboarding (the normal setup path) works on **older Halo firmware, up to and including `2.3`**. On these versions the controller computes the pairing key locally and the integration can complete pairing on its own.
+
+On **firmware `2.7` and newer, BLE onboarding cannot complete.** This is not a bug in this integration and it cannot be fixed here. On newer firmware AstralPool moved the pairing-key computation to their cloud and gated it behind mobile app attestation (Google Play Integrity / Apple App Attest). The controller will only accept a pairing key issued by AstralPool's server, and the server only issues one to a genuine, unmodified copy of the official app running on a non-rooted device. A third-party client has no way to produce a valid attestation token, so pairing times out after the session-key read with no error.
+
+The reverse-engineering behind this is documented, with source-level evidence, by the community in [issue #1](https://github.com/robmarkoski/pychlorinator-cloud/issues/1). Credit to [@davidbell81](https://github.com/davidbell81) for the analysis.
+
+| Firmware | BLE onboarding | Notes |
+| --- | --- | --- |
+| `2.3` and earlier | Works | Local pairing-key computation. Normal setup flow applies. |
+| `2.4` to `2.6` | Uncertain | The attestation gate is keyed off the controller's protocol revision, not a fixed firmware number. Some controllers in this range may pair; others may not. Report your result on the tracker. |
+| `2.7` and newer | Blocked | Server-side attestation wall. BLE onboarding will time out. |
+
+### If you are on blocked firmware
+
+Once the integration has your cloud credentials it does not need BLE again, so the wall is only an *onboarding* problem. If you can already obtain your controller's cloud credentials (serial number, generated username, and generated device password) by other means, the hidden manual credential path (see [Credential Model](#credential-model)) lets you set up the integration without BLE.
+
+Extracting those credentials from the official app is the hard part and is getting harder: older app builds printed them to the Android system log, but that has been closed in recent app versions. There is no supported, general method provided here. Downgrading controller firmware to `2.3` or earlier, where supported, is the only route that restores normal BLE onboarding.
+
+If your controller was already paired to this integration on older firmware and later took a firmware update, your stored credentials keep working — you only hit the wall when trying to onboard a controller fresh on new firmware.
+
+## Installation
+
+### Prerequisites
+
+- Home Assistant Core compatible with the HACS metadata. `hacs.json` currently declares `2024.6.0`.
+- HACS installed.
+- A BLE adapter available to Home Assistant for onboarding.
+- A Halo controller already registered and working in the official AstralPool app.
+- Physical access to the controller so you can put it into Pair Mode.
+- Willingness to stop the vendor app and any other BLE/cloud integrations while setting this up.
+
+### Credential Model
+
+This integration does **not** use your AstralPool app account email and password.
+
+The normal setup flow is a hybrid:
+
+1. Home Assistant discovers the chlorinator over BLE.
+2. You put the chlorinator into Pair Mode.
+3. The integration reads the pairing access code from the BLE advertisement.
+4. The integration registers a short username on the controller, default `HAUser`.
+5. The controller returns password fragments over BLE.
+6. Home Assistant stores the serial number, chosen username, and generated device password.
+7. Normal operation then switches to the cloud WebSocket.
+
+There is a hidden manual credential path in the config flow, but it is a fallback/debug path for people who already know the serial number, username, and generated device password. Most users will not have those credentials until BLE pairing has succeeded.
+
+### HACS Install
+
+1. Open **HACS** in Home Assistant.
+2. Open the HACS settings menu and choose **Custom repositories**.
+3. Add this repository:
+
+   ```text
+   https://github.com/robmarkoski/pychlorinator-cloud
+   ```
+
+4. Set the repository type to **Integration**.
+5. Search HACS integrations for **AstralPool Halo Cloud**.
+6. Install it.
+7. Restart Home Assistant before adding or reloading the integration.
+
+### Integration Setup and Pairing
+
+1. In Home Assistant, go to **Settings -> Devices & Services**.
+2. Choose **Add Integration**.
+3. Search for **AstralPool Halo Cloud**.
+4. Home Assistant will look for BLE devices advertising as `HCHLOR`.
+5. When the integration says it found the chlorinator, press **Submit** in Home Assistant first.
+6. Immediately enable **Pair Mode** on the chlorinator panel.
+7. Choose a username when prompted. Keep it 14 characters or less. The default `HAUser` is fine.
+8. Wait for BLE pairing to complete. The integration registers the username and receives the generated cloud password.
+9. Choose the Home Assistant device name and optional area.
+10. Wait for Home Assistant to create entities. After BLE pairing, the integration deliberately waits about one minute before the first cloud connection so the controller can finish releasing its pairing session.
+
+### Verification
+
+After setup:
+
+- `binary_sensor.<device>_connected` should turn on when the cloud session is active.
+- `sensor.<device>_last_update` should populate after live data arrives.
+- `sensor.<device>_info_message` should become something other than `unknown` once the first state payload is parsed.
+- Core chemistry and temperature sensors should populate if the controller is reporting those values.
+- Write controls should stay unavailable until the cloud session is connected and the needed readbacks are known.
+
+### Common Install Pitfalls
+
+| Symptom | Likely cause | What to try |
+| --- | --- | --- |
+| BLE discovery times out | Home Assistant cannot see the controller BLE advertisement | Check BLE adapter availability, range, and Bluetooth proxy routing. Move closer if needed. |
+| Pairing times out | Pair Mode was not enabled at the right time | Start the HA step first, then enable Pair Mode immediately when prompted. |
+| Pairing fails | Another BLE client or app is connected | Close the vendor app and stop other BLE integrations. |
+| Cloud does not connect immediately after pairing | Normal post-pair cloud settle delay | Wait about one minute. The integration delays the first cloud connection after BLE pairing so the controller can finish releasing its pairing session. |
+| `AstralPool Halo Cloud unreachable` notification appears, sessions die after 5 to 30 seconds, controls go unavailable | The AstralPool cloud relay (`*.connectmypool.com.au`) is degraded, or the controller's cloud bridge is stuck | First check whether it is a server problem: open the official **AstralPool Halo Chlor** app and try to connect. If the official app also cannot hold a connection (or only Bluetooth works), the cloud relay or the controller bridge is unhealthy. The integration keeps retrying with backoff. If this goes on for a while and the official app also fails, the controller's cloud bridge has likely got stuck in an "unavailable" state that does **not** clear by itself. Turn the controller off at the mains, wait about 30 seconds, then turn it back on. See the power-cycle warning below. |
+| Cloud connection fails or disconnects | Vendor app or another integration owns the cloud session | Close the vendor app. Stop any BLE/cloud integration using the same controller. |
+| Entities stay `unknown` | No first live payload yet, or cloud session churn | Wait briefly, then check Home Assistant logs for connect, busy, auth, or timeout errors. |
+
+## Local and BLE Mode
+
+This Home Assistant integration is cloud-first.
+
+BLE is currently used for onboarding only: discovery, Pair Mode detection, username registration, and generated password retrieval. The integration does not use BLE for normal polling or control after setup.
+
+The Python package contains lower-level local/LAN DTLS client code that can derive a local session key from the four-character access code. That code is not exposed as a normal Home Assistant mode, is not presented as a supported LAN runtime here, and should be treated as experimental library plumbing.
+
+## Operational Warnings
+
+> [!WARNING]
+> **Do not run the vendor app and Home Assistant at the same time unless you expect disconnects.**
+>
+> The cloud service appears to allow very limited simultaneous access. If the vendor app is open, this integration may be disconnected or may be unable to reconnect.
+
+> [!WARNING]
+> **Do not run a BLE integration and this cloud integration against the same chlorinator at the same time.**
+>
+> Pick one control path. Running both can cause cloud disconnects, BLE pairing failures, stale state, and unpredictable controller behavior.
+
+> [!WARNING]
+> **If it stops connecting, power-cycle the controller.**
+>
+> The controller allows one cloud session at a time, and its cloud bridge can get stuck in an "unavailable" state after too many rapid reconnects or after fighting the vendor app for the slot. When that happens, sessions drop after a few seconds or the relay refuses to connect at all, and it does not recover on its own. Turn the controller off at the mains, wait about 30 seconds, then turn it back on. That clears it.
+>
+> While it is stuck, do not keep forcing reconnects and do not run the vendor app at the same time, as both make it worse. Use the Pause Cloud Connection button to back off until you can power-cycle.
+
+> [!CAUTION]
+> Pool equipment can affect water chemistry and hardware. Keep the vendor app, the physical controller, and direct water testing as ground truth. Dosing controls in Home Assistant are not a substitute for water testing.
+
+## Planned Features
+
+No promises and no timeline. These are the main known gaps:
+
+- Entity relevance smarts. Hide acid entities when the controller has no dosing hardware (`dosing_capable`), disable manual pump/mode controls while AI mode is active, and hide unconnected equipment (unenabled valves/GPOs) from the timer card.
+- Discover real equipment on pairing. Generate named entities for the valves/GPOs/relays that are actually connected (using the controller's custom names) and support assigning them to rooms/areas.
+- FlexSettings (`0x006B`). The controller sends salt/mineral mode, a mineral-replace reminder date, and — on this firmware — an acid pump flow rate and daily acid dose limit (as float fields). Decoding the newer float layout is pending deeper firmware analysis; the real flow rate would replace the assumed mL/min used by the acid reservoir estimate.
+- Event/fault log (`0x025B`) as a "recent alerts" sensor.
+- Heater cooldown countdown sensor (`0x0450`), solar config/control (`0x04B1`), and other unextracted characteristics (equipment config v2, device profile, firmware update entity).
+- Pump speed and system mode write reliability. There is a known revert issue being investigated.
+- Local-mode / direct-controller bypass. Currently the integration is cloud-only via AstralPool's relay. A direct-WiFi or LAN-discovery path would survive cloud outages but is not implemented.
+- Optional logical child devices for pump, lights, valves, and other accessory groups, using Home Assistant `via_device` for better area targeting and dashboards.
+- Broader firmware and hardware matrix testing. This has only been tested on one controller so far.
+- HACS default repository inclusion. For now it must be added as a custom repository.
+
+## Troubleshooting and Bug Reports
+
+Open an issue at:
+
+```text
+https://github.com/robmarkoski/pychlorinator-cloud/issues
 ```
 
-### Heat demand
+Include:
 
-```yaml
-type: entities
-title: Heat Demand
-entities:
-  - sensor.halo_<SERIAL>_heat_demand_schedule
-  - binary_sensor.halo_<SERIAL>_heat_demand_enabled
-  - binary_sensor.halo_<SERIAL>_heat_demand_window_enabled
-  - binary_sensor.halo_<SERIAL>_heat_demand_activated
-  - select.halo_<SERIAL>_heater_mode_select
-  - number.halo_<SERIAL>_heater_setpoint_control
-```
+- Home Assistant Core version.
+- Integration version.
+- Controller firmware if you can see it.
+- Which install path you used: HACS custom repository, manual copy, or development checkout.
+- Whether the vendor app, a BLE integration, or another cloud client was connected at the same time.
+- Sanitised Home Assistant logs around setup, connect, disconnect, or write failures.
 
-## Services
+Do not include:
 
-### `astralpool_halo_cloud.write_equipment_timer`
+- AstralPool account credentials.
+- Generated device passwords.
+- Full serial numbers if you are not comfortable sharing them publicly.
+- Raw logs containing tokens, passwords, or private network details.
 
-Write one equipment timer slot. 8 slots per season, 2 seasons.
+## Contributing
 
-```yaml
-service: astralpool_halo_cloud.write_equipment_timer
-target:
-  device_id: <HA_DEVICE_ID>
-data:
-  season: Winter
-  slot_index: 0
-  enabled: true
-  start_hour: 7
-  start_min: 0
-  start_mode: Normal           # Normal | Dusk | Dawn
-  stop_hour: 11
-  stop_min: 0
-  stop_mode: Normal
-  equipment:                    # one or more of:
-    - FilterPump                #   PoolSpa, FilterPump, Heater,
-    - Heater                    #   Outlet1..4, Valve1..4, Relay1..2
-  pump_speed: Medium            # Low | Medium | High
-```
+Contributions are welcome, but this project needs careful testing more than broad feature churn.
 
-### `astralpool_halo_cloud.write_heat_demand`
+Good issues and pull requests include:
 
-Write the heater demand schedule. All fields are optional. Omitted fields are preserved from the latest known live snapshot, so you can flip one flag without re-specifying the whole schedule.
+- Clear reproduction steps.
+- Exact entity names and states.
+- Sanitised logs.
+- Firmware/controller details where available.
+- Confirmation that no vendor app or BLE integration was connected during the test, unless contention is the issue being reported.
 
-```yaml
-service: astralpool_halo_cloud.write_heat_demand
-target:
-  device_id: <HA_DEVICE_ID>
-data:
-  enabled: true
-  window_enabled: true
-  start_hour: 6
-  start_minute: 0
-  stop_hour: 22
-  stop_minute: 0
-  activated: true
-```
+Please keep safety-critical or dosing-related changes conservative.
 
-To toggle heat demand on or off without touching the schedule:
+## Acknowledgements
 
-```yaml
-service: astralpool_halo_cloud.write_heat_demand
-target:
-  device_id: <HA_DEVICE_ID>
-data:
-  activated: false
-```
+This project builds on the open-source Halo BLE ecosystem, especially the parser concepts and terminology established by earlier `pychlorinator` and Home Assistant BLE integration work. That prior work made the cloud packet mapping much easier to validate.
 
-## Automation examples
-
-### Pause the cloud session when you open the vendor phone app
-
-The cloud relay only allows one session per chlorinator. If you sometimes use Halo Chlor GO, pause the cloud connection automatically so HA gets out of the way:
-
-```yaml
-alias: Pool - pause cloud when phone is home
-trigger:
-  - platform: state
-    entity_id: device_tracker.phone_ios   # adjust to your device
-    to: "home"
-action:
-  - service: button.press
-    target:
-      entity_id: button.halo_<SERIAL>_pause_cloud_connection
-```
-
-### Notify on a persistent controller fault
-
-```yaml
-alias: Pool - fault notice
-trigger:
-  - platform: state
-    entity_id: binary_sensor.halo_<SERIAL>_controller_fault_active
-    to: "on"
-    for: "00:02:00"
-action:
-  - service: notify.mobile_app_phone
-    data:
-      title: Pool controller fault
-      message: "{{ states('sensor.halo_<SERIAL>_error_message') }}"
-```
-
-### Sanitise overnight if ORP drops
-
-```yaml
-alias: Pool - overnight sanitise on low ORP
-trigger:
-  - platform: numeric_state
-    entity_id: sensor.halo_<SERIAL>_orp_measurement
-    below: 650
-    for: "01:00:00"
-condition:
-  - condition: time
-    after: "22:00:00"
-    before: "06:00:00"
-action:
-  - service: select.select_option
-    target:
-      entity_id: select.halo_<SERIAL>_sanitise_for_period
-    data:
-      option: "6 hours"
-```
-
-## Troubleshooting
-
-**Entities show "unavailable" for the first 30 seconds.**
-Expected on first connect. The cloud relay does an initial state burst and some entities wait on their first characteristic. Give it one signalling cycle.
-
-**Cloud session disconnects shortly after connecting.**
-Earlier builds had a post-connect disconnect bug. If you see it on `0.3.0-preview.1`, open an issue with debug logs.
-
-**Pairing fails: "Wrong credentials" or "Chlorinator unavailable".**
-Power-cycle the controller, wait 30 seconds, retry. Confirm Halo Chlor GO can still connect. Make sure no other HA integration (BLE Halo, BLE chlorinator) is active for the same device. If the controller is on firmware 2.7 or later, BLE pairing may not be possible. See the open repo issue on the firmware 2.7+ Play Integrity / App Attest gate.
-
-**pH or ORP readings look stale.**
-Check Chemistry Values Current and Chemistry Values Valid. If those are false, the controller hasn't sampled yet. Probe sampling is on a controller-side schedule, not the integration's.
-
-**Phone app or BLE client is fighting with HA.**
-The cloud relay only allows one session per chlorinator. Use Pause Cloud Connection. Set a Cloud Pause Duration for an auto-resume.
-
-**Clean removal.**
-Settings, Devices & services, delete the device. Then uninstall the HACS download. The bundled card resources unregister on uninstall. Any card YAML you added by hand needs removing manually.
-
-## What's new in 0.3.0-preview.1
-
-Short summary. See [CHANGELOG.md](CHANGELOG.md) for the full list.
-
-**Architecture reset**
-
-- Cloud-first runtime. BLE is used once for pairing, then the integration talks to the vendor cloud over WebSocket.
-- Old BLE-direct operation has been removed.
-
-**Entities**
-
-- Over 100 entities exposed. Equipment timer surface now matches the vendor app (8 slots per season, Winter and Summer).
-- New heat-demand sensors and `write_heat_demand` service.
-- Per-zone lighting controls with manual mode and active-source attributes.
-- AI / Auto / Manual pump modes with mode-aware speed surfacing.
-- Structured error-code sensor with severity and category.
-- Firmware version, WiFi RSSI, cell runtime, cooling fan, dosing pump, board temperature.
-
-**Lovelace cards**
-
-- Bundled `halo-timer-card` (vendor-app parity timer editor).
-- Bundled `halo-schedule-view` (read-only day / week timeline).
-- Cards auto-register, no manual resource setup.
-
-**Reliability**
-
-- Connection lifecycle rewritten. Non-blocking setup, bounded backoff, fail-closed keepalive with an application-layer time poll alongside the JSON heartbeat. Earlier disconnect bug is closed.
-- Pause and Resume Cloud Connection controls so the phone app or a BLE client can use the chlorinator without uninstalling.
-- Equipment timer writes back with readback confirmation.
-
-**Removed**
-
-- BLE-direct operation (BLE is pairing-only now).
-- Custom-minute filter / sanitise period number entities. Replaced by fixed-duration selects.
-
-**Project**
-
-- MIT licence.
-- `SECURITY.md` documenting the provenance of the hardcoded vendor cloud credentials.
-- HACS custom-repository install path with a proper `hacs.json`.
-
-## Roadmap
-
-No dates. Order is rough priority.
-
-| Status      | Item                                                                 |
-| ----------- | -------------------------------------------------------------------- |
-| Considering | Manual credential entry path for firmware 2.7+ users where BLE pairing is blocked by Play Integrity / App Attest |
-| Considering | Multi-zone lighting writes (per-zone colour selects)                 |
-| Considering | Wider lighting-model coverage beyond SLX / FLX                       |
-| Considering | Confirm timer write path against firmware 2.7+                       |
-| Considering | Surface BLE-only fields (Summer timer config readback) where viable  |
-| Wishlist    | Multi-controller support in a single HA install                      |
-| Wishlist    | Optional energy / runtime statistics exposed via Energy dashboard    |
-| Wishlist    | Cleaner per-firmware capability detection                            |
-| Wishlist    | Better wording across UI strings and translations beyond English     |
-| Wishlist    | More example dashboards and a proper docs site                       |
-
-Writing and docs are a known weak point. Improvements welcome. PRs against existing wording are fine.
-
-## Limitations
-
-- One firmware tested: `pbver 2.3`. Newer firmware (notably 2.7+) may not pair over Bluetooth. Track the relevant repo issue.
-- One cloud session per chlorinator. If the phone app connects, HA gets bumped. Cooperate via the cloud-session controls.
-- Lighting model coverage is currently SLX/FLX-style. Other lighting models may report different colour-index semantics.
-- Per-zone independent lighting writes are not exposed as separate entities. Lighting controls default to Zone 0.
-
-## Reporting issues
-
-Bugs and unexpected behaviour: [GitHub Issues](https://github.com/robmarkoski/pychlorinator-cloud/issues).
-Security issues: [SECURITY.md](SECURITY.md). Don't include real device serial numbers, full packet captures, or session tokens in public issues.
-Feature requests: open an issue with a `feature-request` prefix.
-
-When filing a bug, include:
-
-- Integration version (the AstralPool Halo Cloud card in Settings, Devices & services)
-- Home Assistant version
-- Controller firmware (`pbver`) from the Firmware Version sensor
-- Debug logs for `pychlorinator_cloud` and `custom_components.astralpool_halo_cloud`
+It also depends on Home Assistant and HACS for the integration and distribution model.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
+
+## Final Warning
+
+> [!CAUTION]
+> **Stop before installing this. This is work in progress, pre-release software.**
+>
+> This integration may break at any time. There is no stability promise, no warranty, and no vendor support path.
+>
+> It has been tested on **one firmware version only: `pbver 2.3`**. Other firmware versions, controller variants, regions, and accessory combinations are untested.
+>
+> **Strong recommendation: do NOT use this. Use a BLE-based integration instead.** The cloud path is contended, brittle, depends on internet access, and depends on Astral's servers.
+>
+> **DO NOT run this integration and a BLE integration against the same chlorinator at the same time. Pick one.** Running both can cause cloud disconnects, BLE pairing failures, and unpredictable controller state.
+>
+> This project is unofficial, reverse-engineered, not affiliated with AstralPool, Astral, Fluidra, or Astral Labs, and may stop working whenever the vendor backend changes.

@@ -96,6 +96,10 @@ write_equipment_timer:
             - Relay2
     pump_speed:
       name: Pump Speed
+      description: >-
+        Filter pump speed. AI lets the controller pick automatically based
+        on chemistry need; only valid when FilterPump is in the equipment
+        list.
       default: Medium
       selector:
         select:
@@ -103,6 +107,84 @@ write_equipment_timer:
             - Low
             - Medium
             - High
+            - AI
+
+write_lighting_timer:
+  name: Write Lighting Timer
+  description: >-
+    Configure a lighting timer slot (2 slots per season). Selects which light
+    zones are driven via the zones list (cmd 0x0193, TimerType=1).
+  target:
+    device:
+      integration: astralpool_halo_cloud
+  fields:
+    season:
+      name: Season
+      required: true
+      selector:
+        select:
+          options:
+            - Winter
+            - Summer
+    slot_index:
+      name: Slot Index
+      description: Lighting timer slot 0-1.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1
+    enabled:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
+    start_hour:
+      name: Start Hour
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    start_min:
+      name: Start Minute
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    start_mode:
+      name: Start Mode
+      default: Normal
+      selector:
+        select:
+          options: [Normal, Dusk, Dawn]
+    stop_hour:
+      name: Stop Hour
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+    stop_min:
+      name: Stop Minute
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+    stop_mode:
+      name: Stop Mode
+      default: Normal
+      selector:
+        select:
+          options: [Normal, Dusk, Dawn]
+    zones:
+      name: Light Zones
+      description: Zero-based light zone indices to drive (e.g. [0, 1]).
+      required: true
+      selector:
+        object:
 
 write_heat_demand:
   name: Write Heat Demand Schedule
@@ -154,3 +236,48 @@ write_heat_demand:
       description: Activation flag (manual on/off within an enabled schedule).
       selector:
         boolean:
+
+set_light_colour:
+  name: Set Light Colour / Effect
+  description: >-
+    Set a lighting zone's colour or effect (cmd 0x01F5 SetZoneColour). Valid
+    colour/effect names depend on the controller's light model (e.g. SLX,
+    Hayward ColorLogic, Pentair IntelliBrite). An invalid name returns the
+    list of valid options for your model.
+  target:
+    device:
+      integration: astralpool_halo_cloud
+  fields:
+    colour:
+      name: Colour / Effect
+      description: Model-specific colour or effect name (e.g. "Blue", "Disco").
+      required: true
+      example: Blue
+      selector:
+        text:
+    zone:
+      name: Light Zone
+      description: Zero-based light zone index.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 3
+
+synchronise_light_colour:
+  name: Synchronise Light Colour
+  description: >-
+    Synchronise all lighting zones to the given zone's colour
+    (cmd 0x01F5 SynchroniseZoneColour).
+  target:
+    device:
+      integration: astralpool_halo_cloud
+  fields:
+    zone:
+      name: Light Zone
+      description: Zero-based light zone index to synchronise from.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 3

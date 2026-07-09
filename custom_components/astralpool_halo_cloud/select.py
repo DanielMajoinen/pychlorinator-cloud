@@ -42,7 +42,6 @@ LIGHT_SELECT_DESCRIPTION = HaloSelectEntityDescription(
     key="light_mode_select",
     name="Light Mode",
     options=["Off", "On", "Auto"],
-    entity_registry_enabled_default=False,
     value_fn=lambda data: data.light_mode,
     command_fn=lambda client, option: client.set_light_mode(option),
 )
@@ -51,7 +50,6 @@ BLADE_SELECT_DESCRIPTION = HaloSelectEntityDescription(
     key="blade_mode_select",
     name="Blade Mode",
     options=["Off", "Auto", "On"],
-    entity_registry_enabled_default=False,
     value_fn=lambda data: data.blade_mode,
     command_fn=lambda client, option: client.set_blade_mode(option),
 )
@@ -60,7 +58,6 @@ JETS_SELECT_DESCRIPTION = HaloSelectEntityDescription(
     key="jets_mode_select",
     name="Jets Mode",
     options=["Off", "Auto", "On"],
-    entity_registry_enabled_default=False,
     value_fn=lambda data: data.jets_mode,
     command_fn=lambda client, option: client.set_jets_mode(option),
 )
@@ -354,7 +351,6 @@ class HaloAcidDosingSelect(HaloCloudEntity, SelectEntity):
             HaloSelectEntityDescription(
                 key="acid_dosing_select",
                 name="Acid Dosing Hold",
-                entity_registry_enabled_default=False,
             ),
         )
 
@@ -399,7 +395,7 @@ _PAUSE_MINUTES = {
 # Idle indicator option for the Connection Hold select. Shown as the
 # `current_option` when no pause is active so HA renders a stable label
 # instead of `unknown`. Selecting this option is a no-op (treated like
-# "Resume connection". a safe idempotent action).
+# "Resume connection" — a safe idempotent action).
 _PAUSE_IDLE_OPTION = "Connected"
 
 _PAUSE_OPTIONS = [_PAUSE_IDLE_OPTION, "Resume connection", *_PAUSE_MINUTES]
@@ -417,13 +413,12 @@ class HaloConnectionPauseSelect(HaloCloudEntity, SelectEntity):
                 key="connection_pause_select",
                 name="Connection Hold",
                 entity_category=EntityCategory.CONFIG,
-                entity_registry_enabled_default=False,
             ),
         )
 
     @property
     def available(self) -> bool:
-        """Always available. works whether connected or paused."""
+        """Always available — works whether connected or paused."""
         return True
 
     @property
@@ -440,7 +435,7 @@ class HaloConnectionPauseSelect(HaloCloudEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Pause or resume the cloud connection."""
         if option in (_PAUSE_IDLE_OPTION, "Resume connection"):
-            # Idempotent resume. if not paused this is a no-op; if paused it
+            # Idempotent resume — if not paused this is a no-op; if paused it
             # cancels the hold cleanly.
             if self.coordinator.is_connection_paused:
                 await self.coordinator.async_resume_connection()
@@ -489,7 +484,7 @@ class HaloMaintenancePeriodSelect(HaloCloudEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        """No persistent state. always None (action-trigger select)."""
+        """No persistent state — always None (action-trigger select)."""
         return None
 
     async def async_select_option(self, option: str) -> None:

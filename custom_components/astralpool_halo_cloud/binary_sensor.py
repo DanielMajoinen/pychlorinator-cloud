@@ -16,10 +16,10 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from pychlorinator_cloud.websocket_client import ChlorinatorLiveData
+from .pychlorinator_cloud.websocket_client import ChlorinatorLiveData
 from homeassistant.util import dt as dt_util
 
-from pychlorinator_cloud.error_codes import (
+from .pychlorinator_cloud.error_codes import (
     controller_fault_active,
     controller_notice_active,
     error_info_attributes,
@@ -214,7 +214,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="AI Mode Active",
         icon="mdi:brain",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.ai_mode_active,
     ),
     HaloBinarySensorEntityDescription(
@@ -222,7 +221,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Spa Selected",
         icon="mdi:hot-tub",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: data.spa_selection,
     ),
     HaloBinarySensorEntityDescription(
@@ -232,7 +230,62 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         device_class=BinarySensorDeviceClass.HEAT,
         value_fn=lambda data: data.heater_on,
     ),
-    # Lights deliberately do NOT use BinarySensorDeviceClass.LIGHT. HA's
+    # Gas-heater diagnostics from HeaterStateCharacteristic (0x044E). Parsed
+    # all along but previously dropped before reaching HA; disabled by default
+    # (most relevant for gas heaters).
+    HaloBinarySensorEntityDescription(
+        key="heater_flame",
+        name="Heater Flame",
+        icon="mdi:fire",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_flame,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="heater_pressure",
+        name="Heater Water Pressure",
+        icon="mdi:gauge",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_pressure,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="heater_gas_valve",
+        name="Heater Gas Valve",
+        icon="mdi:valve",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_gas_valve,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="heater_lockout",
+        name="Heater Lockout",
+        icon="mdi:lock-alert",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_lockout,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="heater_service_required",
+        name="Heater Service Required",
+        icon="mdi:wrench-clock",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.heater_service_required,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="solar_pump",
+        name="Solar Pump",
+        icon="mdi:solar-power",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_pump_on,
+    ),
+    HaloBinarySensorEntityDescription(
+        key="solar_flush_active",
+        name="Solar Flush Active",
+        icon="mdi:pipe",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.solar_flush_active,
+    ),
+    # Lights deliberately do NOT use BinarySensorDeviceClass.LIGHT — HA's
     # translation pack renders that as "Light detected" / "No light",
     # which is confusing for a pool light ("No light" sounds like the
     # entity isn't reporting, not that the light is off). Plain on/off
@@ -266,7 +319,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Time Drift",
         icon="mdi:clock-alert-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: None,
     ),
     HaloBinarySensorEntityDescription(
@@ -274,7 +326,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Controller Notice Active",
         icon="mdi:information-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=controller_notice_active,
         attributes_fn=error_info_attributes,
     ),
@@ -284,7 +335,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         icon="mdi:alert",
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=controller_fault_active,
         attributes_fn=error_info_attributes,
     ),
@@ -348,7 +398,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Filtering Only",
         icon="mdi:filter",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "Filtering"),
     ),
     HaloBinarySensorEntityDescription(
@@ -356,7 +405,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Sampling Active",
         icon="mdi:test-tube",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info_any(data, SAMPLING_INFO_MESSAGES),
     ),
     HaloBinarySensorEntityDescription(
@@ -364,7 +412,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Standby",
         icon="mdi:pause-circle-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "Standby"),
     ),
     HaloBinarySensorEntityDescription(
@@ -372,7 +419,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Low Speed No Chlorinating",
         icon="mdi:speedometer-slow",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "LowSpeedNoChlorinating"),
     ),
     HaloBinarySensorEntityDescription(
@@ -380,7 +426,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Reduced Output Low Temperature",
         icon="mdi:thermometer-low",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "LowTemperatureReducedOutput"),
     ),
     HaloBinarySensorEntityDescription(
@@ -388,7 +433,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Heater Cooldown Active",
         icon="mdi:radiator",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "HeaterCooldownInProgress"),
     ),
     HaloBinarySensorEntityDescription(
@@ -396,7 +440,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Manual Acid Dose Active",
         icon="mdi:beaker-plus",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "ManualAcidDose"),
     ),
     HaloBinarySensorEntityDescription(
@@ -404,7 +447,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         name="Backwashing",
         icon="mdi:water",
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=lambda data: match_info(data, "Backwashing"),
     ),
     HaloBinarySensorEntityDescription(
