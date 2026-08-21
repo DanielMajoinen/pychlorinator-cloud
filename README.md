@@ -80,6 +80,7 @@ These are the entities users actively interact with. All cloud-backed writes req
 | --- | --- | --- |
 | `mode_select` | select | Experimental. `Auto -> On -> Auto` has been tested on one controller. Pump/system mode revert behavior is still under investigation. |
 | `pump_speed_select` | select | Experimental. Manual `Low`, `Medium`, and `High` writes exist, but reliability is still under investigation. |
+| `gpo1_mode`, `gpo2_mode` | select | Experimental. Sets a configured outlet to `Off`, `Auto`, or `On` and verifies the `0x00C9` controller readback. GPO3/GPO4 retain their accessory-specific `blade_mode_select` / `jets_mode_select` controls. |
 | `heater_mode_select`, `heater_setpoint_control` | select, number | Experimental. Requires heater data from the controller. |
 | `ph_setpoint_control`, `orp_setpoint_control` | number | Experimental. Uses guarded setpoint writes and controller-reported bounds when available. |
 | `light_mode_select`, `blade_mode_select`, `jets_mode_select` | select | Experimental, accessory-dependent, disabled by default. |
@@ -115,6 +116,7 @@ These are the entities users actively interact with. All cloud-backed writes req
 | Purpose | Entity keys |
 | --- | --- |
 | Connection and pump | `connected`, `pump_operating`, `pump_priming` |
+| GPO outputs | `gpo1_active`, `gpo2_active`, `gpo3_active`, `gpo4_active` (physical output state; mode, auto-enabled flag, and configured name in attributes) |
 | Cell and chemistry validity | `cell_operating`, `cell_disabled`, `cell_reversed`, `cell_reversing`, `chemistry_values_current`, `chemistry_values_valid` |
 | Heater | `heater_on`, `heater_cooldown_active` |
 | Flow and salt | `no_flow`, `low_salt`, `high_salt` |
