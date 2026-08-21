@@ -61,6 +61,45 @@ def _light_zone_available(data: ChlorinatorLiveData, zone_index: int) -> bool:
     return True
 
 
+def _gpo_index_from_key(key: str) -> int | None:
+    """Return the zero-based GPO index encoded in an entity key."""
+    if not key.startswith("gpo") or not key.endswith("_active"):
+        return None
+    try:
+        index = int(key[3:-7]) - 1
+    except ValueError:
+        return None
+    return index if 0 <= index < 4 else None
+
+
+def _gpo_attributes(index: int) -> Callable[[ChlorinatorLiveData], dict[str, object]]:
+    """Return mode and controller naming metadata for a GPO output."""
+    def _attributes(data: ChlorinatorLiveData) -> dict[str, object]:
+        attributes: dict[str, object] = {
+            "mode": data.gpo_modes[index],
+            "auto_enabled": data.gpo_auto_enabled[index],
+        }
+        name = data.gpo_names.get(index + 1)
+        if name is not None:
+            attributes["configured_name"] = name
+        return attributes
+
+    return _attributes
+
+
+def _gpo_description(index: int) -> HaloBinarySensorEntityDescription:
+    """Build a live physical-output sensor for one GPO."""
+    slot = index + 1
+    return HaloBinarySensorEntityDescription(
+        key=f"gpo{slot}_active",
+        name=f"GPO{slot} Active",
+        icon="mdi:power-socket-au",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=lambda data, index=index: data.gpo_states[index],
+        attributes_fn=_gpo_attributes(index),
+    )
+
+
 def match_error(data: ChlorinatorLiveData, expected: str) -> bool | None:
     """Return whether the current error message matches the expected value.
 
@@ -140,6 +179,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[HaloBinarySensorEntityDescription, ...] = (
         device_class=BinarySensorDeviceClass.RUNNING,
         value_fn=lambda data: data.priming_active,
     ),
+    *(_gpo_description(index) for index in range(4)),
     HaloBinarySensorEntityDescription(
         key="valve_0_active",
         name="Valve 0",
@@ -502,6 +542,10 @@ class HaloCloudBinarySensor(HaloCloudEntity, BinarySensorEntity):
         if zone_index is not None:
             data = self.coordinator.data
             return data is not None and _light_zone_available(data, zone_index)
+        gpo_index = _gpo_index_from_key(self.entity_description.key)
+        if gpo_index is not None:
+            data = self.coordinator.data
+            return data is not None and data.gpo_modes[gpo_index] is not None
         return True
 
     @property

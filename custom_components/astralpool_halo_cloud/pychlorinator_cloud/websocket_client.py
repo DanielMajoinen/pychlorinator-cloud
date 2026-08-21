@@ -251,6 +251,11 @@ class ChlorinatorLiveData:
     zone4_is_multicolour: Optional[bool] = None
     blade_mode: Optional[str] = None  # Off, Auto, On
     jets_mode: Optional[str] = None  # Off, Auto, On
+    gpo_modes: list[Optional[str]] = field(default_factory=lambda: [None] * 4)
+    gpo_states: list[Optional[bool]] = field(default_factory=lambda: [None] * 4)
+    gpo_auto_enabled: list[Optional[bool]] = field(
+        default_factory=lambda: [None] * 4
+    )
     # Solar (cmd 0x04B2 SolarStateCharacteristic; accessory-dependent)
     solar_roof_temp_c: Optional[float] = None
     solar_water_temp_c: Optional[float] = None
@@ -422,8 +427,7 @@ VENDOR_LIGHT_ACTIONS = {
 }
 ACTION_MODES = {1: "Off", 2: "Auto", 3: "On"}
 
-BLADE_TARGET_ID = 6
-JETS_TARGET_ID = 7
+GPO_TARGET_IDS = {1: 4, 2: 5, 3: 6, 4: 7}
 EQUIPMENT_SETUP_CMD_IDS = {GPO_SETUP_CMD_ID, VALVE_SETUP_CMD_ID}
 RECEIVE_WATCHDOG_INTERVAL_SECONDS = 2.0
 # The relay can legitimately pause inbound frames for 10-15s during noisy Wi-Fi
@@ -1525,20 +1529,43 @@ class HaloWebSocketClient:
 
     async def set_equipment_mode(self, target_id: int, mode: str) -> None:
         """Set a generic equipment target using the 0x01F4 action path."""
+        slot_by_target = {target: slot for slot, target in GPO_TARGET_IDS.items()}
+        slot = slot_by_target.get(target_id)
+        if slot is None:
+            raise ValueError(f"Unsupported equipment target: {target_id}")
+        await self.set_gpo_mode(slot, mode)
+
+    async def set_gpo_mode(self, slot: int, mode: str) -> None:
+        """Set one configured GPO and verify the controller readback."""
+        target_id = GPO_TARGET_IDS.get(slot)
+        if target_id is None:
+            raise ValueError(f"Invalid GPO slot: {slot}")
         action = {value: key for key, value in ACTION_MODES.items()}.get(mode)
         if action is None:
             raise ValueError(f"Invalid equipment mode: {mode}")
-        await self.send_action(action, bytes([target_id]))
-        if target_id == BLADE_TARGET_ID:
-            self.data.blade_mode = mode
-        elif target_id == JETS_TARGET_ID:
-            self.data.jets_mode = mode
+        if self.data.gpo_modes[slot - 1] is None:
+            raise RuntimeError(f"GPO{slot} is not configured on this controller")
+
+        await self.send_action(
+            action,
+            bytes([target_id]),
+            refresh_cmd_ids=(EQUIPMENT_MODE_CMD_ID,),
+        )
+        if self.data.gpo_modes[slot - 1] != mode:
+            # Force one final read rather than trusting an older cached frame.
+            await self.request_data(EQUIPMENT_MODE_CMD_ID)
+            await _sleep_briefly(0.5)
+        if self.data.gpo_modes[slot - 1] != mode:
+            raise RuntimeError(
+                f"GPO{slot} mode write did not stick: requested {mode}, "
+                f"controller reports {self.data.gpo_modes[slot - 1]}"
+            )
 
     async def set_blade_mode(self, mode: str) -> None:
-        await self.set_equipment_mode(BLADE_TARGET_ID, mode)
+        await self.set_gpo_mode(3, mode)
 
     async def set_jets_mode(self, mode: str) -> None:
-        await self.set_equipment_mode(JETS_TARGET_ID, mode)
+        await self.set_gpo_mode(4, mode)
 
     async def set_heater_off(self) -> None:
         await self._send_padded_write(
@@ -2840,9 +2867,18 @@ class HaloWebSocketClient:
             self.data.pool_left_filter_l = parsed.get("pool_left_filter")
             self.data.spa_enabled = parsed.get("spa_enabled")
         elif parsed.get("type") == "equipment_mode":
-            # Live GPO Off/Auto/On readback — populates Blade (GPO3) / Jets
-            # (GPO4) modes from the controller (was previously write-only
-            # optimistic). None = NotEnabled -> entity unavailable.
+            # Preserve the live mode and physical output state for all four
+            # GPOs. None mode = NotEnabled -> corresponding entity unavailable.
+            self.data.gpo_modes = [
+                parsed.get("gpo1_mode"),
+                parsed.get("gpo2_mode"),
+                parsed.get("blade_mode"),
+                parsed.get("jets_mode"),
+            ]
+            self.data.gpo_states = parsed.get("gpo_states", [None] * 4)
+            self.data.gpo_auto_enabled = parsed.get(
+                "gpo_auto_enabled", [None] * 4
+            )
             self.data.blade_mode = parsed.get("blade_mode")
             self.data.jets_mode = parsed.get("jets_mode")
         elif parsed.get("type") == "solar_state":

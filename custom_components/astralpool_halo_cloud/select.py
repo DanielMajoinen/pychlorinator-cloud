@@ -52,6 +52,7 @@ BLADE_SELECT_DESCRIPTION = HaloSelectEntityDescription(
     options=["Off", "Auto", "On"],
     value_fn=lambda data: data.blade_mode,
     command_fn=lambda client, option: client.set_blade_mode(option),
+    is_supported_fn=lambda data: data.gpo_modes[2] is not None,
 )
 
 JETS_SELECT_DESCRIPTION = HaloSelectEntityDescription(
@@ -60,6 +61,27 @@ JETS_SELECT_DESCRIPTION = HaloSelectEntityDescription(
     options=["Off", "Auto", "On"],
     value_fn=lambda data: data.jets_mode,
     command_fn=lambda client, option: client.set_jets_mode(option),
+    is_supported_fn=lambda data: data.gpo_modes[3] is not None,
+)
+
+
+def _gpo_select_description(slot: int) -> HaloSelectEntityDescription:
+    """Build a guarded mode selector for a generic GPO outlet."""
+    index = slot - 1
+    return HaloSelectEntityDescription(
+        key=f"gpo{slot}_mode",
+        name=f"GPO{slot} Mode",
+        options=["Off", "Auto", "On"],
+        value_fn=lambda data, index=index: data.gpo_modes[index],
+        command_fn=lambda client, option, slot=slot: client.set_gpo_mode(
+            slot, option
+        ),
+        is_supported_fn=lambda data, index=index: data.gpo_modes[index] is not None,
+    )
+
+
+GPO_SELECT_DESCRIPTIONS = tuple(
+    _gpo_select_description(slot) for slot in (1, 2)
 )
 
 HEATER_SELECT_DESCRIPTION = HaloSelectEntityDescription(
@@ -168,6 +190,10 @@ async def async_setup_entry(
             HaloActionSelect(coordinator, LIGHT_SELECT_DESCRIPTION),
             HaloActionSelect(coordinator, BLADE_SELECT_DESCRIPTION),
             HaloActionSelect(coordinator, JETS_SELECT_DESCRIPTION),
+            *(
+                HaloActionSelect(coordinator, description)
+                for description in GPO_SELECT_DESCRIPTIONS
+            ),
             HaloActionSelect(coordinator, HEATER_SELECT_DESCRIPTION),
             HaloActionSelect(coordinator, TIMER_SEASON_SELECT_DESCRIPTION),
             HaloAcidDosingSelect(coordinator),
