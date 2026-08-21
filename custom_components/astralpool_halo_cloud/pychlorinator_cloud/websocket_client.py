@@ -328,6 +328,7 @@ class ChlorinatorLiveData:
 ACTION_CMD_ID = 0x01F4
 LIGHT_CMD_ID = 0x01F5
 HEATER_CMD_ID = 0x01F6
+GPO_ACTION_CMD_ID = 0x01F8
 TIME_CMD_ID = 0x0002
 DATE_CMD_ID = 0x0003
 
@@ -427,7 +428,6 @@ VENDOR_LIGHT_ACTIONS = {
 }
 ACTION_MODES = {1: "Off", 2: "Auto", 3: "On"}
 
-GPO_TARGET_IDS = {1: 4, 2: 5, 3: 6, 4: 7}
 EQUIPMENT_SETUP_CMD_IDS = {GPO_SETUP_CMD_ID, VALVE_SETUP_CMD_ID}
 RECEIVE_WATCHDOG_INTERVAL_SECONDS = 2.0
 # The relay can legitimately pause inbound frames for 10-15s during noisy Wi-Fi
@@ -1527,18 +1527,9 @@ class HaloWebSocketClient:
             raise ValueError(f"Invalid light zone: {zone}")
         await self._send_padded_write(LIGHT_CMD_ID, bytes([6, zone]))
 
-    async def set_equipment_mode(self, target_id: int, mode: str) -> None:
-        """Set a generic equipment target using the 0x01F4 action path."""
-        slot_by_target = {target: slot for slot, target in GPO_TARGET_IDS.items()}
-        slot = slot_by_target.get(target_id)
-        if slot is None:
-            raise ValueError(f"Unsupported equipment target: {target_id}")
-        await self.set_gpo_mode(slot, mode)
-
     async def set_gpo_mode(self, slot: int, mode: str) -> None:
         """Set one configured GPO and verify the controller readback."""
-        target_id = GPO_TARGET_IDS.get(slot)
-        if target_id is None:
+        if not 1 <= slot <= 4:
             raise ValueError(f"Invalid GPO slot: {slot}")
         action = {value: key for key, value in ACTION_MODES.items()}.get(mode)
         if action is None:
@@ -1546,10 +1537,14 @@ class HaloWebSocketClient:
         if self.data.gpo_modes[slot - 1] is None:
             raise RuntimeError(f"GPO{slot} is not configured on this controller")
 
-        await self.send_action(
-            action,
-            bytes([target_id]),
+        # GPOs have their own AppAction characteristic (0x01F8). Its payload
+        # is [zero-based GPO index, action], unlike the general chlorinator
+        # action characteristic (0x01F4), whose first byte is the action.
+        await self._send_padded_write(
+            GPO_ACTION_CMD_ID,
+            bytes([slot - 1, action]),
             refresh_cmd_ids=(EQUIPMENT_MODE_CMD_ID,),
+            refresh_delay_seconds=2.0,
         )
         if self.data.gpo_modes[slot - 1] != mode:
             # Force one final read rather than trusting an older cached frame.
