@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta.3-gpo.5] - 2026-08-22
+
+### Fixed
+
+- GPO mode writes now use the capture-proven general AppAction command `0x01F4` with `[action, equipment bitmask]`. A full bidirectional HaloChlor GO BLE capture confirmed GPO1 On as `03 f4 01 03 02` and Off as `03 f4 01 01 02`, followed by successful `0x00C9` mode and physical-state transitions. The previous prerelease used the correct payload on the wrong `0x01F8` command.
+
 ## [0.3.0-beta.3-gpo.4] - 2026-08-22
 
 ### Fixed
@@ -145,4 +151,5 @@ Previous public release. See git history for details.
 [0.3.0-beta.3-gpo.2]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.2
 [0.3.0-beta.3-gpo.3]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.3
 [0.3.0-beta.3-gpo.4]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.4
+[0.3.0-beta.3-gpo.5]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.5
 [0.3.0-beta.1]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.2.4...v0.3.0-beta.1

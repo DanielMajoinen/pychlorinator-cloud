@@ -328,7 +328,6 @@ class ChlorinatorLiveData:
 ACTION_CMD_ID = 0x01F4
 LIGHT_CMD_ID = 0x01F5
 HEATER_CMD_ID = 0x01F6
-GPO_ACTION_CMD_ID = 0x01F8
 TIME_CMD_ID = 0x0002
 DATE_CMD_ID = 0x0003
 
@@ -1199,7 +1198,11 @@ class HaloWebSocketClient:
             raise RuntimeError("Not connected")
 
         self._trace_connect_event("tx", source, command_bytes.hex())
-        if source == f"write(0x{GPO_ACTION_CMD_ID:04x})":
+        if (
+            source == f"write(0x{ACTION_CMD_ID:04x})"
+            and self._gpo_diagnostic_until is not None
+            and asyncio.get_running_loop().time() <= self._gpo_diagnostic_until
+        ):
             LOGGER.debug(
                 "GPO diagnostic TX context=%s frame=%s",
                 self._gpo_diagnostic_context,
@@ -1557,13 +1560,13 @@ class HaloWebSocketClient:
             self.data.gpo_auto_enabled,
         )
 
-        # Captured from HaloChlor GO on firmware 2.7: the GPO AppAction
-        # characteristic (0x01F8) takes [action, equipment bitmask].  The
-        # equipment bitfield reserves bit 0 for the filter pump, so GPO1-4
-        # use masks 0x02, 0x04, 0x08 and 0x10 respectively.
+        # Decrypted from a successful HaloChlor GO BLE capture on firmware 2.7:
+        # GPO mode changes use the general AppAction command (0x01F4) with
+        # [action, equipment bitmask]. The equipment bitfield reserves bit 0
+        # for the filter pump, so GPO1-4 use 0x02, 0x04, 0x08 and 0x10.
         equipment_mask = 1 << slot
         await self._send_padded_write(
-            GPO_ACTION_CMD_ID,
+            ACTION_CMD_ID,
             bytes([action, equipment_mask]),
             refresh_cmd_ids=(EQUIPMENT_MODE_CMD_ID,),
             refresh_delay_seconds=2.0,

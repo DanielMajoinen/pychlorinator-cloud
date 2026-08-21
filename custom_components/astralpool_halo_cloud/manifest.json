@@ -23,5 +23,5 @@
   "requirements": [
     "websockets>=12.0"
   ],
-  "version": "0.3.0-beta.3-gpo.4"
+  "version": "0.3.0-beta.3-gpo.5"
 }
