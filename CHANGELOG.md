@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta.3-gpo.3] - 2026-08-21
+
+### Added
+
+- Targeted debug diagnostics for GPO mode writes. With debug logging enabled, each attempt records the exact `0x01F8` transmit frame, the cached state before writing, raw `0x00C9` readback frames during the following ten seconds, and the final decoded state on verification failure. No credentials are logged and unrelated protocol traffic remains suppressed.
+
 ## [0.3.0-beta.3-gpo.2] - 2026-08-21
 
 ### Fixed
@@ -131,4 +137,5 @@ Previous public release. See git history for details.
 
 [0.3.0-beta.3-gpo.1]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.1
 [0.3.0-beta.3-gpo.2]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.2
+[0.3.0-beta.3-gpo.3]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.3
 [0.3.0-beta.1]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.2.4...v0.3.0-beta.1

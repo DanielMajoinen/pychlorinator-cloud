@@ -659,6 +659,8 @@ class HaloWebSocketClient:
         self._send_lock = asyncio.Lock()
         self._session_id = uuid.uuid4().hex[:8]
         self._trace_until: float | None = None
+        self._gpo_diagnostic_until: float | None = None
+        self._gpo_diagnostic_context: str | None = None
         self._disable_startup_refresh = os.environ.get(
             "HALO_DISABLE_STARTUP_REFRESH", ""
         ).strip().lower() in {"1", "true", "yes", "on"}
@@ -1197,6 +1199,12 @@ class HaloWebSocketClient:
             raise RuntimeError("Not connected")
 
         self._trace_connect_event("tx", source, command_bytes.hex())
+        if source == f"write(0x{GPO_ACTION_CMD_ID:04x})":
+            LOGGER.debug(
+                "GPO diagnostic TX context=%s frame=%s",
+                self._gpo_diagnostic_context,
+                command_bytes.hex(),
+            )
         msg = {
             "type": "dataexchange",
             "payload": {
@@ -1537,6 +1545,18 @@ class HaloWebSocketClient:
         if self.data.gpo_modes[slot - 1] is None:
             raise RuntimeError(f"GPO{slot} is not configured on this controller")
 
+        loop = asyncio.get_running_loop()
+        self._gpo_diagnostic_until = loop.time() + 10.0
+        self._gpo_diagnostic_context = f"GPO{slot} {self.data.gpo_modes[slot - 1]}->{mode}"
+        LOGGER.debug(
+            "GPO diagnostic start context=%s cached_modes=%s cached_states=%s "
+            "auto_enabled=%s",
+            self._gpo_diagnostic_context,
+            self.data.gpo_modes,
+            self.data.gpo_states,
+            self.data.gpo_auto_enabled,
+        )
+
         # GPOs have their own AppAction characteristic (0x01F8). Its payload
         # is [zero-based GPO index, action], unlike the general chlorinator
         # action characteristic (0x01F4), whose first byte is the action.
@@ -1551,6 +1571,14 @@ class HaloWebSocketClient:
             await self.request_data(EQUIPMENT_MODE_CMD_ID)
             await _sleep_briefly(0.5)
         if self.data.gpo_modes[slot - 1] != mode:
+            LOGGER.debug(
+                "GPO diagnostic failed context=%s final_modes=%s final_states=%s "
+                "auto_enabled=%s",
+                self._gpo_diagnostic_context,
+                self.data.gpo_modes,
+                self.data.gpo_states,
+                self.data.gpo_auto_enabled,
+            )
             raise RuntimeError(
                 f"GPO{slot} mode write did not stick: requested {mode}, "
                 f"controller reports {self.data.gpo_modes[slot - 1]}"
@@ -2440,6 +2468,20 @@ class HaloWebSocketClient:
                 self._first_payload_seen = True
                 self._trace_connect_event("rx", "dataexchange", data_bytes.hex())
                 parsed = parse_data_payload(data_bytes)
+                if (
+                    self._gpo_diagnostic_until is not None
+                    and asyncio.get_running_loop().time() <= self._gpo_diagnostic_until
+                    and parsed.get("cmd_id") == EQUIPMENT_MODE_CMD_ID
+                ):
+                    LOGGER.debug(
+                        "GPO diagnostic RX context=%s frame=%s modes=%s states=%s "
+                        "auto_enabled=%s",
+                        self._gpo_diagnostic_context,
+                        data_bytes.hex(),
+                        parsed.get("gpo_modes"),
+                        parsed.get("gpo_states"),
+                        parsed.get("gpo_auto_enabled"),
+                    )
                 self._update_data(parsed, data_bytes)
                 if self.on_data:
                     try:
