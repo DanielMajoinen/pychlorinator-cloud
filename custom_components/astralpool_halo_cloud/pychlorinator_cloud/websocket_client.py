@@ -1557,12 +1557,14 @@ class HaloWebSocketClient:
             self.data.gpo_auto_enabled,
         )
 
-        # GPOs have their own AppAction characteristic (0x01F8). Its payload
-        # is [zero-based GPO index, action], unlike the general chlorinator
-        # action characteristic (0x01F4), whose first byte is the action.
+        # Captured from HaloChlor GO on firmware 2.7: the GPO AppAction
+        # characteristic (0x01F8) takes [action, equipment bitmask].  The
+        # equipment bitfield reserves bit 0 for the filter pump, so GPO1-4
+        # use masks 0x02, 0x04, 0x08 and 0x10 respectively.
+        equipment_mask = 1 << slot
         await self._send_padded_write(
             GPO_ACTION_CMD_ID,
-            bytes([slot - 1, action]),
+            bytes([action, equipment_mask]),
             refresh_cmd_ids=(EQUIPMENT_MODE_CMD_ID,),
             refresh_delay_seconds=2.0,
         )

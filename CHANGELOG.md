@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta.3-gpo.4] - 2026-08-22
+
+### Fixed
+
+- Corrected GPO mode writes from `[zero-based GPO index, action]` to the official app's captured `[action, equipment bitmask]` payload. GPO1-GPO4 use masks `0x02`, `0x04`, `0x08`, and `0x10`; Off/Auto/On remain actions `1`, `2`, and `3`.
+
 ## [0.3.0-beta.3-gpo.3] - 2026-08-21
 
 ### Added
@@ -138,4 +144,5 @@ Previous public release. See git history for details.
 [0.3.0-beta.3-gpo.1]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.1
 [0.3.0-beta.3-gpo.2]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.2
 [0.3.0-beta.3-gpo.3]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.3
+[0.3.0-beta.3-gpo.4]: https://github.com/DanielMajoinen/pychlorinator-cloud/releases/tag/0.3.0-beta.3-gpo.4
 [0.3.0-beta.1]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.2.4...v0.3.0-beta.1
