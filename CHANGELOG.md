@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Live physical output state for GPO1-GPO4 from the existing `0x00C9` equipment-mode readback. Four new read-only binary sensors expose whether each configured outlet is energised, with its current Off/Auto/On mode, auto-enabled flag, and configured controller name as attributes.
+- Guarded GPO1/GPO2 mode selectors using the capture-verified `0x01F4` equipment action command and `[action, equipment bitmask]` payload. Writes support Off/Auto/On, reject unconfigured outlets, refresh `0x00C9`, and fail visibly when controller readback does not match the requested mode. Existing Blade (GPO3) and Jets (GPO4) controls now use the same verified path.
+
 ## [0.3.0-beta.3] - 2026-07-10
 
 ### Fixed
@@ -116,5 +123,5 @@ First public beta on the road to 1.0. Substantial protocol-correctness work plus
 
 Previous public release. See git history for details.
 
-[Unreleased]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.3.0-beta.3...HEAD
 [0.3.0-beta.1]: https://github.com/robmarkoski/pychlorinator-cloud/compare/v0.2.4...v0.3.0-beta.1

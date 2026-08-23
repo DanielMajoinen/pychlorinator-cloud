@@ -744,6 +744,23 @@ def _parse_relay_custom_name_chunk(data: bytes) -> dict[str, Any]:
 # 0x01F4 write enum). 255/0xFF = NotEnabled (outlet not fitted) -> None.
 GPO_MODE_LABELS = {0: "Off", 1: "Auto", 2: "On"}
 
+# EquipmentModeCharacteristic StateBitfield / AutoEnabledBitfield masks.
+# These match the packed BusinessObjects layout and the established
+# pychlorinator EquipmentModeCharacteristic decoder.
+EQUIPMENT_STATE_FLAGS = {
+    "filter_pump": 0x0001,
+    "gpo1": 0x0002,
+    "gpo2": 0x0004,
+    "gpo3": 0x0008,
+    "gpo4": 0x0010,
+    "valve1": 0x0020,
+    "valve2": 0x0040,
+    "valve3": 0x0080,
+    "valve4": 0x0100,
+    "relay1": 0x0200,
+    "relay2": 0x0400,
+}
+
 SOLAR_MODE_LABELS = {0: "Off", 1: "Auto", 2: "On"}  # -1 = NotAssigned -> None
 SOLAR_MESSAGE_LABELS = {
     0: "None",
@@ -804,6 +821,9 @@ def _parse_equipment_mode(data: bytes) -> dict[str, Any]:
     def mode(byte: int) -> str | None:
         return GPO_MODE_LABELS.get(byte)  # None for NotEnabled (255) / unknown
 
+    state_bitfield = data[12] | (data[13] << 8)
+    auto_bitfield = data[14] | (data[15] << 8)
+
     return {
         "type": "equipment_mode",
         "equipment_enabled": bool(data[0]),
@@ -812,10 +832,18 @@ def _parse_equipment_mode(data: bytes) -> dict[str, Any]:
         "gpo2_mode": mode(data[3]),
         "blade_mode": mode(data[4]),  # GPO3 / Outlet3
         "jets_mode": mode(data[5]),  # GPO4 / Outlet4
+        "gpo_states": [
+            bool(state_bitfield & EQUIPMENT_STATE_FLAGS[f"gpo{slot}"])
+            for slot in range(1, 5)
+        ],
+        "gpo_auto_enabled": [
+            bool(auto_bitfield & EQUIPMENT_STATE_FLAGS[f"gpo{slot}"])
+            for slot in range(1, 5)
+        ],
         "valve_modes": [mode(data[6 + i]) for i in range(4)],
         "relay_modes": [mode(data[10]), mode(data[11])],
-        "state_bitfield": data[12] | (data[13] << 8),
-        "auto_bitfield": data[14] | (data[15] << 8),
+        "state_bitfield": state_bitfield,
+        "auto_bitfield": auto_bitfield,
     }
 
 
